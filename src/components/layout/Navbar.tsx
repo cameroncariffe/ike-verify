@@ -24,43 +24,20 @@ export function Navbar({ account = 'ikeGPS > Account Demo' }: NavbarProps) {
           <Menu size={24} color="white" strokeWidth={1.75} />
         </div>
 
-        {/* IKE Logo: logomark + wordmark */}
-        <div className="flex items-center h-[31px] justify-center shrink-0">
-          <div
-            className="relative shrink-0"
-            style={{ width: '67.289px', height: '24.255px' }}
-          >
-            {/* Logo Mark – occupies the left ~36% of container */}
-            <img
-              alt="IKE logo mark"
-              src="/ike-logomark.svg"
-              className="absolute block"
-              style={{
-                top: 0,
-                left: 0,
-                bottom: 0,
-                right: '63.95%',
-                width: 'auto',
-                height: '100%',
-                objectFit: 'contain',
-              }}
-            />
-            {/* Word Mark – occupies right portion, with vertical inset */}
-            <img
-              alt="IKE wordmark"
-              src="/ike-wordmark.svg"
-              className="absolute block"
-              style={{
-                top: '12.87%',
-                left: '42.72%',
-                bottom: '12.87%',
-                right: 0,
-                width: 'auto',
-                height: 'auto',
-                objectFit: 'contain',
-              }}
-            />
-          </div>
+        {/* IKE Logo: logomark + wordmark side by side */}
+        <div className="flex items-center h-[31px] shrink-0" style={{ gap: '4.5px' }}>
+          {/* Logo Mark: square 24.26 × 24.26px (viewBox 24.2549 × 24.2549) */}
+          <img
+            alt="IKE logo mark"
+            src="/ike-logomark.svg"
+            style={{ width: '24.26px', height: '24.26px', flexShrink: 0, display: 'block' }}
+          />
+          {/* Word Mark: 38.54 × 18.01px (viewBox 38.5404 × 18.0129), vertically centered */}
+          <img
+            alt="IKE wordmark"
+            src="/ike-wordmark.svg"
+            style={{ width: '38.54px', height: '18.01px', flexShrink: 0, display: 'block' }}
+          />
         </div>
 
         {/* "Validation" title */}
