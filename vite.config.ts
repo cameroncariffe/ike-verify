@@ -4,7 +4,6 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
 export default defineConfig({
-  base: '/ike-verify/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
