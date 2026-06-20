@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Search, ArrowUpDown, ListFilter, LayoutList,
+  Search, ArrowUpDown, ListFilter, LayoutList, List, X, Pencil,
   ChevronDown, ChevronUp, ArrowLeftFromLine, ArrowRightFromLine,
   Wand2, BookMarked, CheckCircle, History, ExternalLink,
   MoreVertical, UtilityPole,
@@ -50,6 +50,7 @@ interface LeftSidebarProps {
   ruleSets: RuleSet[];
   lastRun?: DesignSet['runHistory'][0];
   jobName: string;
+  onBulkEdit?: (poleIds: string[]) => void;
 }
 
 // ─── Pole status indicator (circle that reflects rule-run results) ────────────
@@ -98,26 +99,43 @@ function ItemFlyout({ onAction }: { onAction: (a: PoleAction) => void }) {
 // ─── Pole list row ────────────────────────────────────────────────────────────
 function PoleListItem({
   pole, selected, onClick, onAction,
+  bulkMode = false, checked = false, onToggleCheck,
 }: {
   pole: Pole; selected: boolean; onClick: () => void; onAction: (a: PoleAction) => void;
+  bulkMode?: boolean; checked?: boolean; onToggleCheck?: () => void;
 }) {
   const status = getPoleStatus(pole);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const handleRowClick = () => {
+    if (bulkMode) onToggleCheck?.();
+    else onClick();
+  };
 
   return (
     <div className="px-2 py-0.5 bg-white">
       <div
         role="button"
         tabIndex={0}
-        onClick={onClick}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+        onClick={handleRowClick}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRowClick(); } }}
         className={cn(
           'w-full flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative cursor-pointer',
-          selected
+          selected && !bulkMode
             ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
             : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
         )}
       >
+        {/* Bulk-select checkbox */}
+        {bulkMode && (
+          <Checkbox
+            checked={checked}
+            onClick={e => e.stopPropagation()}
+            onCheckedChange={() => onToggleCheck?.()}
+            className="shrink-0 mr-1"
+          />
+        )}
+
         {/* Status indicator */}
         <PoleStatusIndicator status={status} />
 
@@ -131,23 +149,25 @@ function PoleListItem({
           {pole.taggedDate}
         </span>
 
-        {/* Kebab — visible on hover, when active, or while its menu is open */}
-        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-          <PopoverTrigger
-            onClick={e => e.stopPropagation()}
-            className={cn(
-              'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
-              selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            )}
-          >
-            <MoreVertical size={18} className="text-[#3c404d]" />
-          </PopoverTrigger>
-          <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
-            <ItemFlyout
-              onAction={a => { setMenuOpen(false); onAction(a); }}
-            />
-          </PopoverContent>
-        </Popover>
+        {/* Kebab — hidden in bulk mode; visible on hover, when active, or while its menu is open */}
+        {!bulkMode && (
+          <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+            <PopoverTrigger
+              onClick={e => e.stopPropagation()}
+              className={cn(
+                'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
+                selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              )}
+            >
+              <MoreVertical size={18} className="text-[#3c404d]" />
+            </PopoverTrigger>
+            <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
+              <ItemFlyout
+                onAction={a => { setMenuOpen(false); onAction(a); }}
+              />
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
     </div>
   );
@@ -458,7 +478,7 @@ export function LeftSidebar({
   designSets: _designSets, activeDesignSetId: _activeDesignSetId,
   onSelectDesignSet: _onSelectDesignSet,
   onCreateDesignSet, onRunValidation,
-  ruleSets, lastRun, jobName,
+  ruleSets, lastRun, jobName, onBulkEdit,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed]       = useState(false);
   const [search, setSearch]             = useState('');
@@ -469,6 +489,8 @@ export function LeftSidebar({
   const [historyOpen, setHistoryOpen]   = useState(false);
   const [sortBy, setSortBy]             = useState<SortOption>('last-modified');
   const [statusFilters, setStatusFilters] = useState<Set<PoleStatus>>(new Set());
+  const [bulkMode, setBulkMode]         = useState(false);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
 
   // Counts per status across all poles (for the filter flyout badges)
   const statusCounts = poles.reduce<Record<PoleStatus, number>>(
@@ -501,6 +523,29 @@ export function LeftSidebar({
           return 0;
       }
     });
+
+  const allFilteredSelected = filteredPoles.length > 0 && filteredPoles.every(p => bulkSelected.has(p.id));
+  const someSelected = filteredPoles.some(p => bulkSelected.has(p.id));
+
+  const toggleBulkPole = (id: string) => {
+    setBulkSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setBulkSelected(prev => {
+      if (filteredPoles.length > 0 && filteredPoles.every(p => prev.has(p.id))) {
+        return new Set();
+      }
+      return new Set(filteredPoles.map(p => p.id));
+    });
+  };
+
+  const enterBulkMode = () => setBulkMode(true);
+  const exitBulkMode = () => { setBulkMode(false); setBulkSelected(new Set()); };
 
   const expandToSection = (section: 'create' | 'rules' | 'results' | 'history') => {
     setCollapsed(false);
@@ -544,29 +589,78 @@ export function LeftSidebar({
         className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-[#f7f9fc]"
         style={{ background: '#363687' }}
       >
-        <button className="text-white hover:text-white/70 transition-colors shrink-0">
-          <LayoutList size={24} />
-        </button>
+        {/* Left controls */}
+        {!bulkMode ? (
+          <button
+            onClick={enterBulkMode}
+            className="text-white hover:text-white/70 transition-colors shrink-0"
+            title="Bulk edit"
+          >
+            <LayoutList size={24} />
+          </button>
+        ) : (
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Select all */}
+            <Checkbox
+              checked={allFilteredSelected}
+              indeterminate={someSelected && !allFilteredSelected}
+              onCheckedChange={toggleSelectAll}
+              className="border-white data-unchecked:bg-white/10"
+              title="Select all"
+            />
+            {/* Bulk action button (only when items selected) */}
+            {bulkSelected.size > 0 && (
+              <button
+                onClick={() => onBulkEdit?.(Array.from(bulkSelected))}
+                className="flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full bg-white border border-[#e5e5e5] text-[#2a2f3c] text-xs font-medium hover:bg-neutral-100 transition-colors"
+              >
+                <Pencil size={13} />
+                Bulk
+              </button>
+            )}
+            {/* Exit bulk mode */}
+            <button
+              onClick={exitBulkMode}
+              className="text-white hover:text-white/70 transition-colors"
+              title="Exit bulk edit"
+            >
+              <List size={24} />
+            </button>
+          </div>
+        )}
 
-        {/* Inline search (shown when search icon is clicked) */}
+        {/* Inline search field (fills the middle when active) */}
         {showSearch && (
-          <Input
-            autoFocus
-            placeholder="Search…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onBlur={() => { if (!search) setShowSearch(false); }}
-            className="flex-1 h-7 text-xs bg-white/10 border-white/30 text-white placeholder:text-white/50 focus-visible:ring-0"
-          />
+          <div className="flex-1 flex items-center gap-1.5 bg-white rounded-md border border-neutral-200 px-2 h-8 min-w-0">
+            <Search size={15} className="text-neutral-400 shrink-0" />
+            <input
+              autoFocus
+              type="text"
+              placeholder="Search poles…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 min-w-0 text-sm bg-transparent outline-none text-neutral-700 placeholder:text-neutral-400"
+            />
+            <button
+              onClick={() => { setSearch(''); setShowSearch(false); }}
+              className="text-neutral-400 hover:text-neutral-600 shrink-0"
+            >
+              <X size={16} />
+            </button>
+          </div>
         )}
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
-          <button
-            onClick={() => setShowSearch(s => !s)}
-            className="text-white hover:text-white/70 transition-colors"
-          >
-            <Search size={24} />
-          </button>
+          {/* Standalone search icon — hidden while the field is open */}
+          {!showSearch && (
+            <button
+              onClick={() => setShowSearch(true)}
+              className="text-white hover:text-white/70 transition-colors"
+              title="Search"
+            >
+              <Search size={24} />
+            </button>
+          )}
 
           {/* Sort flyout */}
           <Popover>
@@ -611,6 +705,9 @@ export function LeftSidebar({
             pole={pole}
             selected={pole.id === selectedPoleId}
             onClick={() => onSelectPole(pole.id)}
+            bulkMode={bulkMode}
+            checked={bulkSelected.has(pole.id)}
+            onToggleCheck={() => toggleBulkPole(pole.id)}
             onAction={action => {
               if (action === 'create-variant') {
                 onCreateDesignSet(`${pole.poleNumber} variant`);
