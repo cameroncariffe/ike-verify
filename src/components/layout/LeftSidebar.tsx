@@ -5,6 +5,7 @@ import {
   Wand2, BookMarked, CheckCircle, History, ExternalLink,
   MoreVertical, UtilityPole,
   Circle, CircleCheck, CircleX, CircleAlert,
+  Copy, StickyNote, Save, SquarePen, Upload,
 } from 'lucide-react';
 import type { Pole, DesignSet, RuleSet, ValidationStatus } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
@@ -66,20 +67,52 @@ function PoleStatusIndicator({ status }: { status: PoleStatus }) {
   }
 }
 
+// ─── Item flyout (kebab menu) ─────────────────────────────────────────────────
+type PoleAction = 'create-variant' | 'add-note' | 'save-draft' | 'edit-properties' | 'publish';
+
+const POLE_MENU_ITEMS: { id: PoleAction; label: string; icon: typeof Copy }[] = [
+  { id: 'create-variant',  label: 'Create new variant', icon: Copy },
+  { id: 'add-note',        label: 'Add note',           icon: StickyNote },
+  { id: 'save-draft',      label: 'Save draft',         icon: Save },
+  { id: 'edit-properties', label: 'Edit properties',    icon: SquarePen },
+  { id: 'publish',         label: 'Publish',            icon: Upload },
+];
+
+function ItemFlyout({ onAction }: { onAction: (a: PoleAction) => void }) {
+  return (
+    <div className="flex flex-col w-[180px]">
+      {POLE_MENU_ITEMS.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => onAction(id)}
+          className="flex items-center gap-2 min-h-8 px-2 py-1.5 rounded-md text-left hover:bg-[#f5f5f5] transition-colors"
+        >
+          <Icon size={16} className="text-[#0a0a0a] shrink-0" />
+          <span className="text-sm text-[#0a0a0a] whitespace-nowrap">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Pole list row ────────────────────────────────────────────────────────────
 function PoleListItem({
-  pole, selected, onClick, onKebab,
+  pole, selected, onClick, onAction,
 }: {
-  pole: Pole; selected: boolean; onClick: () => void; onKebab?: () => void;
+  pole: Pole; selected: boolean; onClick: () => void; onAction: (a: PoleAction) => void;
 }) {
   const status = getPoleStatus(pole);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
     <div className="px-2 py-0.5 bg-white">
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onClick}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
         className={cn(
-          'w-full flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative',
+          'w-full flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative cursor-pointer',
           selected
             ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
             : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
@@ -98,20 +131,24 @@ function PoleListItem({
           {pole.taggedDate}
         </span>
 
-        {/* Kebab — visible on hover or when active */}
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={e => { e.stopPropagation(); onKebab?.(); }}
-          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onKebab?.(); } }}
-          className={cn(
-            'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
-            selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          )}
-        >
-          <MoreVertical size={18} className="text-[#3c404d]" />
-        </span>
-      </button>
+        {/* Kebab — visible on hover, when active, or while its menu is open */}
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger
+            onClick={e => e.stopPropagation()}
+            className={cn(
+              'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
+              selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
+          >
+            <MoreVertical size={18} className="text-[#3c404d]" />
+          </PopoverTrigger>
+          <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
+            <ItemFlyout
+              onAction={a => { setMenuOpen(false); onAction(a); }}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
     </div>
   );
 }
@@ -574,6 +611,11 @@ export function LeftSidebar({
             pole={pole}
             selected={pole.id === selectedPoleId}
             onClick={() => onSelectPole(pole.id)}
+            onAction={action => {
+              if (action === 'create-variant') {
+                onCreateDesignSet(`${pole.poleNumber} variant`);
+              }
+            }}
           />
         ))}
       </div>
