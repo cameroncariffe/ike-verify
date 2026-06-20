@@ -2,9 +2,14 @@ import { useState, useCallback } from 'react';
 import { Navbar } from '../components/layout/Navbar';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
+import { MapControls } from '../components/map/MapControls';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
 import type { Job, DesignSet } from '../types';
 import { mockRuleSets } from '../data/mockData';
+
+const PANEL_DEFAULT_WIDTH = 520;
+const PANEL_MIN_WIDTH = 360;
+const PANEL_MAX_WIDTH = 1000;
 
 interface ValidationWorkbenchProps {
   job: Job;
@@ -14,6 +19,8 @@ interface ValidationWorkbenchProps {
 export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchProps) {
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
 
   const activeDesignSet = job.designSets.find(d => d.id === job.activeDesignSetId)!;
   const poles = activeDesignSet.poles;
@@ -23,6 +30,29 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
 
   const handleSelectPole = useCallback((id: string) => {
     setSelectedPoleId(id);
+    setPanelOpen(true);
+  }, []);
+
+  const handleTogglePanel = useCallback(() => {
+    setPanelOpen(o => !o);
+  }, []);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const onMove = (ev: MouseEvent) => {
+      const next = window.innerWidth - ev.clientX;
+      setPanelWidth(Math.min(Math.max(next, PANEL_MIN_WIDTH), PANEL_MAX_WIDTH));
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'ew-resize';
   }, []);
 
   const handlePrev = useCallback(() => {
@@ -128,35 +158,24 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
         />
 
         <main className="flex flex-1 min-w-0 overflow-hidden relative">
-          <MapView
-            poles={poles}
-            selectedPoleId={selectedPoleId}
-            onSelectPole={handleSelectPole}
-          />
-
-          {/* Map toolbar (vertical icon strip) */}
-          <div className="absolute top-2 right-[530px] flex flex-col gap-1.5 bg-white rounded-lg border border-neutral-200 p-1.5 shadow-sm z-10">
-            {['👁', '✏️', '✋', '◇'].map((icon, i) => (
-              <button
-                key={i}
-                className="w-8 h-8 flex items-center justify-center rounded-md border border-neutral-200 bg-white hover:bg-neutral-50 text-sm shadow-sm transition-colors"
-              >
-                {icon}
-              </button>
-            ))}
-          </div>
+          <MapView />
+          <MapControls panelOpen={panelOpen} onTogglePanel={handleTogglePanel} />
         </main>
 
-        <PoleDetailsPanel
-          pole={selectedPole}
-          showResults={showResults}
-          onToggleResults={() => setShowResults(o => !o)}
-          onPrev={handlePrev}
-          onNext={handleNext}
-          canPrev={selectedPoleIndex > 0}
-          canNext={selectedPoleIndex < poles.length - 1}
-          onClose={() => setSelectedPoleId(null)}
-        />
+        {panelOpen && (
+          <PoleDetailsPanel
+            pole={selectedPole}
+            showResults={showResults}
+            onToggleResults={() => setShowResults(o => !o)}
+            onPrev={handlePrev}
+            onNext={handleNext}
+            canPrev={selectedPoleIndex > 0}
+            canNext={selectedPoleIndex < poles.length - 1}
+            onClose={() => setPanelOpen(false)}
+            width={panelWidth}
+            onResizeStart={handleResizeStart}
+          />
+        )}
       </div>
     </div>
   );

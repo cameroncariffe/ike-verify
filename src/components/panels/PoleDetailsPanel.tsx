@@ -16,6 +16,21 @@ interface PoleDetailsPanelProps {
   canPrev: boolean;
   canNext: boolean;
   onClose: () => void;
+  width: number;
+  onResizeStart: (e: React.MouseEvent) => void;
+}
+
+function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      role="separator"
+      aria-orientation="vertical"
+      className="absolute left-0 top-0 h-full w-1.5 -ml-0.5 cursor-ew-resize z-10 group"
+    >
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px bg-transparent group-hover:bg-[#363687] transition-colors" />
+    </div>
+  );
 }
 
 function DetailRow({
@@ -71,12 +86,18 @@ export function PoleDetailsPanel({
   canPrev,
   canNext,
   onClose,
+  width,
+  onResizeStart,
 }: PoleDetailsPanelProps) {
   const [equipmentOpen, setEquipmentOpen] = useState(true);
 
   if (!pole) {
     return (
-      <aside className="w-[520px] shrink-0 flex flex-col border-l border-neutral-200 bg-white">
+      <aside
+        style={{ width }}
+        className="relative shrink-0 flex flex-col border-l border-neutral-200 bg-white"
+      >
+        <ResizeHandle onMouseDown={onResizeStart} />
         <div
           className="flex items-center px-3 h-12 border-b border-white/20 shrink-0"
           style={{ background: '#363687' }}
@@ -84,6 +105,9 @@ export function PoleDetailsPanel({
           <span className="font-barlow font-semibold text-white text-base flex-1">
             Pole details
           </span>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition-colors p-1">
+            <X size={16} />
+          </button>
         </div>
         <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">
           Select a pole to view details
@@ -99,7 +123,11 @@ export function PoleDetailsPanel({
   const totalReview = results.filter(r => r.status === 'review').length;
 
   return (
-    <aside className="w-[520px] shrink-0 flex flex-col border-l border-neutral-200 bg-white overflow-hidden">
+    <aside
+      style={{ width }}
+      className="relative shrink-0 flex flex-col border-l border-neutral-200 bg-white overflow-hidden"
+    >
+      <ResizeHandle onMouseDown={onResizeStart} />
       {/* Header row 1: Title */}
       <div
         className="flex items-center px-3 h-12 border-b border-white/20 shrink-0"
