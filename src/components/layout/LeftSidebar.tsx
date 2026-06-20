@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import {
   Search, ArrowUpDown, ListFilter, LayoutList,
-  ChevronDown, ChevronUp, ArrowLeftFromLine,
+  ChevronDown, ChevronUp, ArrowLeftFromLine, ArrowRightFromLine,
   Wand2, BookMarked, CheckCircle, History, ExternalLink,
-  MoreHorizontal,
+  MoreHorizontal, UtilityPole,
 } from 'lucide-react';
 import type { Pole, DesignSet, RuleSet } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
@@ -252,6 +252,55 @@ function ResultsBody({ lastRun }: { lastRun: DesignSet['runHistory'][0] }) {
   );
 }
 
+// ─── Collapsed rail ───────────────────────────────────────────────────────────
+function CollapsedRail({
+  onExpand,
+  onExpandToSection,
+}: {
+  onExpand: () => void;
+  onExpandToSection: (section: 'create' | 'rules' | 'results' | 'history') => void;
+}) {
+  const railBtn =
+    'flex items-center justify-center w-full h-10 text-white hover:bg-white/10 transition-colors border-b border-[#f7f9fc]/30 shrink-0';
+  return (
+    <aside
+      className="flex flex-col w-11 shrink-0 h-full"
+      style={{ background: '#363687' }}
+    >
+      {/* Expand toggle */}
+      <button className={railBtn} onClick={onExpand} title="Expand panel">
+        <ArrowRightFromLine size={20} />
+      </button>
+
+      {/* Poles (utility-pole) */}
+      <button className={railBtn} onClick={onExpand} title="Poles">
+        <UtilityPole size={20} />
+      </button>
+
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Section icons */}
+      <button className={railBtn} onClick={() => onExpandToSection('create')} title="Create Design">
+        <Wand2 size={20} />
+      </button>
+      <button className={railBtn} onClick={() => onExpandToSection('rules')} title="Rules & Templates">
+        <BookMarked size={20} />
+      </button>
+      <button className={railBtn} onClick={() => onExpandToSection('results')} title="Results">
+        <CheckCircle size={20} />
+      </button>
+      <button
+        className={cn(railBtn, 'border-b-0')}
+        onClick={() => onExpandToSection('history')}
+        title="History"
+      >
+        <History size={20} />
+      </button>
+    </aside>
+  );
+}
+
 // ─── Main sidebar ─────────────────────────────────────────────────────────────
 export function LeftSidebar({
   poles, selectedPoleId, onSelectPole,
@@ -260,6 +309,7 @@ export function LeftSidebar({
   onCreateDesignSet, onRunValidation,
   ruleSets, lastRun, jobName,
 }: LeftSidebarProps) {
+  const [collapsed, setCollapsed]       = useState(false);
   const [search, setSearch]             = useState('');
   const [showSearch, setShowSearch]     = useState(false);
   const [createOpen, setCreateOpen]     = useState(false);
@@ -270,6 +320,23 @@ export function LeftSidebar({
   const filteredPoles = poles.filter(p =>
     p.poleNumber.toLowerCase().includes(search.toLowerCase())
   );
+
+  const expandToSection = (section: 'create' | 'rules' | 'results' | 'history') => {
+    setCollapsed(false);
+    setCreateOpen(section === 'create');
+    setRulesOpen(section === 'rules');
+    setResultsOpen(section === 'results');
+    setHistoryOpen(section === 'history');
+  };
+
+  if (collapsed) {
+    return (
+      <CollapsedRail
+        onExpand={() => setCollapsed(false)}
+        onExpandToSection={expandToSection}
+      />
+    );
+  }
 
   return (
     <aside className="flex flex-col w-[320px] shrink-0 border-r border-neutral-200 overflow-hidden h-full">
@@ -282,7 +349,11 @@ export function LeftSidebar({
         <span className="font-barlow font-semibold text-white text-base flex-1 leading-none">
           {jobName}
         </span>
-        <button className="text-white hover:text-white/70 transition-colors shrink-0">
+        <button
+          onClick={() => setCollapsed(true)}
+          className="text-white hover:text-white/70 transition-colors shrink-0"
+          title="Collapse panel"
+        >
           <ArrowLeftFromLine size={20} />
         </button>
       </div>
