@@ -5,12 +5,36 @@ import {
   Wand2, BookMarked, CheckCircle, History, ExternalLink,
   MoreHorizontal, UtilityPole,
 } from 'lucide-react';
-import type { Pole, DesignSet, RuleSet } from '../../types';
+import type { Pole, DesignSet, RuleSet, ValidationStatus } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Separator } from '../ui/separator';
+import { Checkbox } from '../ui/checkbox';
+import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover';
 import { cn } from '../../lib/utils';
+
+// ─── Pole status helpers ──────────────────────────────────────────────────────
+type PoleStatus = 'pass' | 'warning' | 'fail' | 'unverified';
+
+function getPoleStatus(pole: Pole): PoleStatus {
+  const results = pole.validationResults ?? [];
+  if (results.length === 0) return 'unverified';
+  if (results.some(r => r.status === 'fail')) return 'fail';
+  if (results.some(r => r.status === 'warning')) return 'warning';
+  return 'pass';
+}
+
+type SortOption = 'last-modified' | 'collected-at' | 'validation-fail-pass' | 'validation-pass-fail';
+
+const SORT_OPTIONS: { id: SortOption; label: string }[] = [
+  { id: 'last-modified', label: 'Last modified' },
+  { id: 'collected-at', label: 'Collected at' },
+  { id: 'validation-fail-pass', label: 'Validation: Fail - Pass' },
+  { id: 'validation-pass-fail', label: 'Validation: Pass - Fail' },
+];
+
+const STATUS_RANK: Record<PoleStatus, number> = { fail: 0, warning: 1, unverified: 2, pass: 3 };
 
 interface LeftSidebarProps {
   poles: Pole[];
@@ -252,6 +276,94 @@ function ResultsBody({ lastRun }: { lastRun: DesignSet['runHistory'][0] }) {
   );
 }
 
+// ─── Sort flyout ──────────────────────────────────────────────────────────────
+function SortFlyout({
+  value, onChange,
+}: {
+  value: SortOption;
+  onChange: (v: SortOption) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 w-[198px]">
+      <div className="border-b border-neutral-200 px-2 pb-2">
+        <p className="text-base font-medium text-[#0a0a0a]">Sort by</p>
+      </div>
+      <div className="flex flex-col">
+        {SORT_OPTIONS.map(opt => {
+          const selected = opt.id === value;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => onChange(opt.id)}
+              className={cn(
+                'flex items-center gap-2 min-h-8 px-2 py-1.5 rounded-md text-left transition-colors',
+                selected ? 'bg-[#f5f5f5]' : 'hover:bg-[#f5f5f5]'
+              )}
+            >
+              {/* Radio */}
+              <span className="flex items-center justify-center w-5 shrink-0">
+                <span className={cn(
+                  'w-4 h-4 rounded-full border flex items-center justify-center',
+                  selected ? 'border-[#171717]' : 'border-neutral-300'
+                )}>
+                  {selected && <span className="w-2 h-2 rounded-full bg-[#171717]" />}
+                </span>
+              </span>
+              <span className="text-sm text-[#0a0a0a] whitespace-nowrap">{opt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Filter flyout ────────────────────────────────────────────────────────────
+function FilterFlyout({
+  counts, active, onToggle,
+}: {
+  counts: Record<PoleStatus, number>;
+  active: Set<PoleStatus>;
+  onToggle: (s: PoleStatus) => void;
+}) {
+  const rows: { status: PoleStatus; badge: ValidationStatus }[] = [
+    { status: 'pass',       badge: 'pass' },
+    { status: 'warning',    badge: 'warning' },
+    { status: 'fail',       badge: 'fail' },
+    { status: 'unverified', badge: 'pending' },
+  ];
+  return (
+    <div className="flex flex-col gap-2 w-[160px]">
+      <div className="border-b border-neutral-200 px-2 pb-2">
+        <p className="text-base font-medium text-[#0a0a0a]">Filter by</p>
+      </div>
+      <div className="flex flex-col">
+        {rows.map(({ status, badge }) => {
+          const checked = active.has(status);
+          return (
+            <button
+              key={status}
+              onClick={() => onToggle(status)}
+              className={cn(
+                'flex items-center gap-2 min-h-8 px-2 py-1.5 rounded-md text-left transition-colors',
+                checked ? 'bg-[#f5f5f5]' : 'hover:bg-[#f5f5f5]'
+              )}
+            >
+              <span className="flex items-center justify-center w-5 shrink-0">
+                <Checkbox checked={checked} className="pointer-events-none" />
+              </span>
+              <ValidationBadge
+                status={badge}
+                count={counts[status]}
+              />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Collapsed rail ───────────────────────────────────────────────────────────
 function CollapsedRail({
   onExpand,
@@ -316,10 +428,40 @@ export function LeftSidebar({
   const [rulesOpen, setRulesOpen]       = useState(false);
   const [resultsOpen, setResultsOpen]   = useState(false);
   const [historyOpen, setHistoryOpen]   = useState(false);
+  const [sortBy, setSortBy]             = useState<SortOption>('last-modified');
+  const [statusFilters, setStatusFilters] = useState<Set<PoleStatus>>(new Set());
 
-  const filteredPoles = poles.filter(p =>
-    p.poleNumber.toLowerCase().includes(search.toLowerCase())
+  // Counts per status across all poles (for the filter flyout badges)
+  const statusCounts = poles.reduce<Record<PoleStatus, number>>(
+    (acc, p) => { acc[getPoleStatus(p)]++; return acc; },
+    { pass: 0, warning: 0, fail: 0, unverified: 0 }
   );
+
+  const toggleStatusFilter = (s: PoleStatus) => {
+    setStatusFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s); else next.add(s);
+      return next;
+    });
+  };
+
+  const filteredPoles = poles
+    .filter(p => p.poleNumber.toLowerCase().includes(search.toLowerCase()))
+    .filter(p => statusFilters.size === 0 || statusFilters.has(getPoleStatus(p)))
+    .slice()
+    .sort((a, b) => {
+      switch (sortBy) {
+        case 'validation-fail-pass':
+          return STATUS_RANK[getPoleStatus(a)] - STATUS_RANK[getPoleStatus(b)];
+        case 'validation-pass-fail':
+          return STATUS_RANK[getPoleStatus(b)] - STATUS_RANK[getPoleStatus(a)];
+        case 'collected-at':
+          return a.taggedDate.localeCompare(b.taggedDate);
+        case 'last-modified':
+        default:
+          return 0;
+      }
+    });
 
   const expandToSection = (section: 'create' | 'rules' | 'results' | 'history') => {
     setCollapsed(false);
@@ -386,12 +528,39 @@ export function LeftSidebar({
           >
             <Search size={24} />
           </button>
-          <button className="text-white hover:text-white/70 transition-colors">
-            <ArrowUpDown size={24} />
-          </button>
-          <button className="text-white hover:text-white/70 transition-colors">
-            <ListFilter size={24} />
-          </button>
+
+          {/* Sort flyout */}
+          <Popover>
+            <PopoverTrigger
+              className="text-white hover:text-white/70 transition-colors"
+              title="Sort"
+            >
+              <ArrowUpDown size={24} />
+            </PopoverTrigger>
+            <PopoverContent align="end" sideOffset={6} className="w-auto p-2">
+              <SortFlyout value={sortBy} onChange={setSortBy} />
+            </PopoverContent>
+          </Popover>
+
+          {/* Filter flyout */}
+          <Popover>
+            <PopoverTrigger
+              className="text-white hover:text-white/70 transition-colors relative"
+              title="Filter"
+            >
+              <ListFilter size={24} />
+              {statusFilters.size > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </PopoverTrigger>
+            <PopoverContent align="end" sideOffset={6} className="w-auto p-2">
+              <FilterFlyout
+                counts={statusCounts}
+                active={statusFilters}
+                onToggle={toggleStatusFilter}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
 

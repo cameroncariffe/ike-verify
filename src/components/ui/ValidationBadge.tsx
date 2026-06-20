@@ -13,7 +13,7 @@ const badgeConfig: Record<ValidationStatus, { bg: string; border: string; text: 
   fail:    { bg: 'bg-[#ffe2e2]', border: 'border-[#b91c1c]', text: 'text-[#b91c1c]', label: 'Fail' },
   warning: { bg: 'bg-[#fef9c3]', border: 'border-[#a16207]', text: 'text-[#a16207]', label: 'Warning' },
   review:  { bg: 'bg-[#dbeafe]', border: 'border-[#1d4ed8]', text: 'text-[#1d4ed8]', label: 'Review' },
-  pending: { bg: 'bg-neutral-100', border: 'border-neutral-300', text: 'text-neutral-500', label: 'Pending' },
+  pending: { bg: 'bg-[#f5f5f5]', border: 'border-[#737373]', text: 'text-[#616571]', label: 'Unverified' },
 };
 
 export function ValidationBadge({ status, count, size = 'sm', className }: ValidationBadgeProps) {
