@@ -3,7 +3,8 @@ import {
   Search, ArrowUpDown, ListFilter, LayoutList,
   ChevronDown, ChevronUp, ArrowLeftFromLine, ArrowRightFromLine,
   Wand2, BookMarked, CheckCircle, History, ExternalLink,
-  MoreHorizontal, UtilityPole,
+  MoreVertical, UtilityPole,
+  Circle, CircleCheck, CircleX, CircleAlert,
 } from 'lucide-react';
 import type { Pole, DesignSet, RuleSet, ValidationStatus } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
@@ -50,67 +51,68 @@ interface LeftSidebarProps {
   jobName: string;
 }
 
+// ─── Pole status indicator (circle that reflects rule-run results) ────────────
+function PoleStatusIndicator({ status }: { status: PoleStatus }) {
+  switch (status) {
+    case 'pass':
+      return <CircleCheck size={20} className="text-[#1fa163] shrink-0" strokeWidth={2} />;
+    case 'fail':
+      return <CircleX size={20} className="text-[#dc2626] shrink-0" strokeWidth={2} />;
+    case 'warning':
+      return <CircleAlert size={20} className="text-[#eab308] shrink-0" strokeWidth={2} />;
+    case 'unverified':
+    default:
+      return <Circle size={20} className="text-[#9ea2aa] shrink-0" strokeWidth={2} />;
+  }
+}
+
 // ─── Pole list row ────────────────────────────────────────────────────────────
 function PoleListItem({
-  pole, selected, onClick,
+  pole, selected, onClick, onKebab,
 }: {
-  pole: Pole; selected: boolean; onClick: () => void;
+  pole: Pole; selected: boolean; onClick: () => void; onKebab?: () => void;
 }) {
-  const results = pole.validationResults ?? [];
-  const failCount  = results.filter(r => r.status === 'fail').length;
-  const warnCount  = results.filter(r => r.status === 'warning').length;
-  const passAll    = results.length > 0 && failCount === 0 && warnCount === 0;
-  const hasResults = results.length > 0;
+  const status = getPoleStatus(pole);
 
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-full flex items-center gap-3 px-3 h-10 text-left transition-colors group border-b border-[#f7f9fc] relative',
-        selected ? 'bg-[#f0f0fa]' : 'bg-white hover:bg-neutral-50'
-      )}
-    >
-      {/* Radio circle */}
-      <div className={cn(
-        'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0',
-        selected ? 'border-[#363687] bg-[#363687]' : 'border-neutral-300 bg-white'
-      )}>
-        {selected && <div className="w-2 h-2 rounded-full bg-white" />}
-      </div>
-
-      {/* Pole number */}
-      <span className={cn(
-        'text-sm flex-1 text-left',
-        selected ? 'font-medium text-[#2a2f3c]' : 'font-normal text-[#2a2f3c]'
-      )}>
-        {pole.poleNumber}
-      </span>
-
-      {/* Validation badges (only when results exist) */}
-      {hasResults && (
-        <div className="flex items-center gap-1 shrink-0">
-          {failCount > 0  && <ValidationBadge status="fail"    count={failCount} />}
-          {warnCount > 0 && failCount === 0 && <ValidationBadge status="warning" count={warnCount} />}
-          {passAll        && <ValidationBadge status="pass" />}
-        </div>
-      )}
-
-      {/* Date */}
-      <span className="text-[11px] text-[#a3a3a3] shrink-0 tabular-nums">
-        {pole.taggedDate}
-      </span>
-
-      {/* Kebab hover */}
-      <span
-        role="button"
-        tabIndex={0}
-        onClick={e => e.stopPropagation()}
-        onKeyDown={e => { if (e.key === 'Enter') e.stopPropagation(); }}
-        className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:bg-neutral-200 transition-all cursor-pointer"
+    <div className="px-2 py-0.5 bg-white">
+      <button
+        onClick={onClick}
+        className={cn(
+          'w-full flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative',
+          selected
+            ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
+            : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
+        )}
       >
-        <MoreHorizontal size={14} className="text-neutral-400" />
-      </span>
-    </button>
+        {/* Status indicator */}
+        <PoleStatusIndicator status={status} />
+
+        {/* Pole number */}
+        <span className="font-barlow text-sm flex-1 text-left text-[#3c404d] truncate">
+          {pole.poleNumber}
+        </span>
+
+        {/* Date */}
+        <span className="font-barlow text-xs text-[#9ea2aa] shrink-0 text-right whitespace-nowrap">
+          {pole.taggedDate}
+        </span>
+
+        {/* Kebab — visible on hover or when active */}
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={e => { e.stopPropagation(); onKebab?.(); }}
+          onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); onKebab?.(); } }}
+          className={cn(
+            'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
+            selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          )}
+        >
+          <MoreVertical size={18} className="text-[#3c404d]" />
+        </span>
+      </button>
+    </div>
   );
 }
 
