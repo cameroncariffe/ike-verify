@@ -107,35 +107,29 @@ function PoleListItem({
   const status = getPoleStatus(pole);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleRowClick = () => {
-    if (bulkMode) onToggleCheck?.();
-    else onClick();
-  };
-
   return (
-    <div className="px-2 py-0.5 bg-white">
+    <div className="pl-3 pr-2 py-0.5 bg-white flex items-center gap-2">
+      {/* Bulk-select checkbox — sits outside the item card, only it toggles selection */}
+      {bulkMode && (
+        <Checkbox
+          checked={checked}
+          onCheckedChange={() => onToggleCheck?.()}
+          className="shrink-0"
+        />
+      )}
+
       <div
         role="button"
         tabIndex={0}
-        onClick={handleRowClick}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleRowClick(); } }}
+        onClick={onClick}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
         className={cn(
-          'w-full flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative cursor-pointer',
-          selected && !bulkMode
+          'flex-1 min-w-0 flex items-center gap-1 h-8 pl-2 pr-1 py-1 rounded-[4px] text-left transition-colors group relative cursor-pointer',
+          selected
             ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
             : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
         )}
       >
-        {/* Bulk-select checkbox */}
-        {bulkMode && (
-          <Checkbox
-            checked={checked}
-            onClick={e => e.stopPropagation()}
-            onCheckedChange={() => onToggleCheck?.()}
-            className="shrink-0 mr-1"
-          />
-        )}
-
         {/* Status indicator */}
         <PoleStatusIndicator status={status} />
 
@@ -149,25 +143,23 @@ function PoleListItem({
           {pole.taggedDate}
         </span>
 
-        {/* Kebab — hidden in bulk mode; visible on hover, when active, or while its menu is open */}
-        {!bulkMode && (
-          <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-            <PopoverTrigger
-              onClick={e => e.stopPropagation()}
-              className={cn(
-                'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
-                selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              )}
-            >
-              <MoreVertical size={18} className="text-[#3c404d]" />
-            </PopoverTrigger>
-            <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
-              <ItemFlyout
-                onAction={a => { setMenuOpen(false); onAction(a); }}
-              />
-            </PopoverContent>
-          </Popover>
-        )}
+        {/* Kebab — visible on hover, when active, or while its menu is open */}
+        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+          <PopoverTrigger
+            onClick={e => e.stopPropagation()}
+            className={cn(
+              'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
+              selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            )}
+          >
+            <MoreVertical size={18} className="text-[#3c404d]" />
+          </PopoverTrigger>
+          <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
+            <ItemFlyout
+              onAction={a => { setMenuOpen(false); onAction(a); }}
+            />
+          </PopoverContent>
+        </Popover>
       </div>
     </div>
   );
