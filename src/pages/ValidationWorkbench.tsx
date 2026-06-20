@@ -42,20 +42,18 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
     setSelectedPoleId(null);
   }, [job, onJobUpdate]);
 
-  const handleDuplicateDesignSet = useCallback((sourceId: string) => {
-    const source = job.designSets.find(d => d.id === sourceId);
-    if (!source) return;
-    const copyCount = job.designSets.filter(d => d.parentId === sourceId).length;
+  const handleCreateDesignSet = useCallback((name: string) => {
+    const source = activeDesignSet;
     const newSet: DesignSet = {
-      id: `ds-copy-${Date.now()}`,
-      name: `${source.name} (Copy ${copyCount + 1})`,
-      label: `Copy ${copyCount + 1}`,
-      parentId: sourceId,
-      isDuplicate: true,
+      id: `ds-${Date.now()}`,
+      name,
+      label: name,
+      parentId: source.id,
+      isDuplicate: false,
       createdAt: new Date().toISOString(),
       poles: source.poles.map(p => ({
         ...p,
-        id: `${p.id}-copy-${Date.now()}`,
+        id: `${p.id}-${Date.now()}`,
         validationResults: [],
       })),
       runHistory: [],
@@ -67,7 +65,7 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
     };
     onJobUpdate(updated);
     setSelectedPoleId(null);
-  }, [job, onJobUpdate]);
+  }, [job, activeDesignSet, onJobUpdate]);
 
   const handleRunValidation = useCallback((ruleSetId: string) => {
     const ruleSet = mockRuleSets.find(r => r.id === ruleSetId);
@@ -122,10 +120,11 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
           designSets={job.designSets}
           activeDesignSetId={job.activeDesignSetId}
           onSelectDesignSet={handleSelectDesignSet}
-          onDuplicateDesignSet={handleDuplicateDesignSet}
+          onCreateDesignSet={handleCreateDesignSet}
           onRunValidation={handleRunValidation}
           ruleSets={mockRuleSets}
           lastRun={lastRun}
+          jobName={job.name}
         />
 
         <main className="flex flex-1 min-w-0 overflow-hidden relative">

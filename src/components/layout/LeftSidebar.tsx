@@ -1,10 +1,15 @@
 import { useState } from 'react';
 import {
-  Search, ArrowUpDown, SlidersHorizontal, ChevronDown, ChevronRight,
-  LayoutGrid, Play, FileText, History, Plus, Copy, MoreHorizontal
+  Search, ArrowUpDown, ListFilter, LayoutList,
+  ChevronDown, ChevronUp, ArrowLeftFromLine,
+  Wand2, BookMarked, CheckCircle, History, ExternalLink,
+  MoreHorizontal,
 } from 'lucide-react';
 import type { Pole, DesignSet, RuleSet } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
+import { Button } from '../ui/button';
+import { Input } from '../ui/input';
+import { Separator } from '../ui/separator';
 import { cn } from '../../lib/utils';
 
 interface LeftSidebarProps {
@@ -14,72 +19,70 @@ interface LeftSidebarProps {
   designSets: DesignSet[];
   activeDesignSetId: string;
   onSelectDesignSet: (id: string) => void;
-  onDuplicateDesignSet: (id: string) => void;
+  onCreateDesignSet: (name: string) => void;
   onRunValidation: (ruleSetId: string) => void;
   ruleSets: RuleSet[];
   lastRun?: DesignSet['runHistory'][0];
+  jobName: string;
 }
 
+// ─── Pole list row ────────────────────────────────────────────────────────────
 function PoleListItem({
-  pole,
-  selected,
-  onClick,
+  pole, selected, onClick,
 }: {
-  pole: Pole;
-  selected: boolean;
-  onClick: () => void;
+  pole: Pole; selected: boolean; onClick: () => void;
 }) {
   const results = pole.validationResults ?? [];
-  const failCount = results.filter(r => r.status === 'fail').length;
-  const warnCount = results.filter(r => r.status === 'warning').length;
-  const hasFail = failCount > 0;
+  const failCount  = results.filter(r => r.status === 'fail').length;
+  const warnCount  = results.filter(r => r.status === 'warning').length;
+  const passAll    = results.length > 0 && failCount === 0 && warnCount === 0;
+  const hasResults = results.length > 0;
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors group relative',
-        selected
-          ? 'bg-amber-50 border-r-2 border-[#363687]'
-          : 'hover:bg-neutral-50'
+        'w-full flex items-center gap-3 px-3 h-10 text-left transition-colors group border-b border-[#f7f9fc] relative',
+        selected ? 'bg-[#f0f0fa]' : 'bg-white hover:bg-neutral-50'
       )}
     >
+      {/* Radio circle */}
       <div className={cn(
-        'w-4 h-4 rounded-full border flex items-center justify-center shrink-0',
-        selected ? 'border-[#363687] bg-[#363687]' : 'border-neutral-300'
+        'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0',
+        selected ? 'border-[#363687] bg-[#363687]' : 'border-neutral-300 bg-white'
       )}>
-        {selected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+        {selected && <div className="w-2 h-2 rounded-full bg-white" />}
       </div>
 
+      {/* Pole number */}
       <span className={cn(
-        'text-sm flex-1 font-medium',
-        selected ? 'text-[#2a2f3c]' : 'text-neutral-600'
+        'text-sm flex-1 text-left',
+        selected ? 'font-medium text-[#2a2f3c]' : 'font-normal text-[#2a2f3c]'
       )}>
         {pole.poleNumber}
       </span>
 
-      <div className="flex items-center gap-1">
-        {hasFail && (
-          <ValidationBadge status="fail" count={failCount} size="sm" />
-        )}
-        {warnCount > 0 && !hasFail && (
-          <ValidationBadge status="warning" count={warnCount} size="sm" />
-        )}
-        {!hasFail && warnCount === 0 && results.length > 0 && (
-          <ValidationBadge status="pass" size="sm" />
-        )}
-      </div>
+      {/* Validation badges (only when results exist) */}
+      {hasResults && (
+        <div className="flex items-center gap-1 shrink-0">
+          {failCount > 0  && <ValidationBadge status="fail"    count={failCount} />}
+          {warnCount > 0 && failCount === 0 && <ValidationBadge status="warning" count={warnCount} />}
+          {passAll        && <ValidationBadge status="pass" />}
+        </div>
+      )}
 
-      <span className="text-[10px] text-neutral-400 shrink-0 min-w-[80px] text-right">
+      {/* Date */}
+      <span className="text-[11px] text-[#a3a3a3] shrink-0 tabular-nums">
         {pole.taggedDate}
       </span>
 
+      {/* Kebab hover */}
       <span
         role="button"
         tabIndex={0}
-        onClick={e => { e.stopPropagation(); }}
+        onClick={e => e.stopPropagation()}
         onKeyDown={e => { if (e.key === 'Enter') e.stopPropagation(); }}
-        className="opacity-0 group-hover:opacity-100 ml-1 p-0.5 rounded hover:bg-neutral-200 transition-all cursor-pointer"
+        className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded hover:bg-neutral-200 transition-all cursor-pointer"
       >
         <MoreHorizontal size={14} className="text-neutral-400" />
       </span>
@@ -87,69 +90,242 @@ function PoleListItem({
   );
 }
 
+// ─── Section accordion header ─────────────────────────────────────────────────
+function SectionHeader({
+  icon, label, isOpen, onToggle, badge,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  isOpen: boolean;
+  onToggle: () => void;
+  badge?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 px-2 h-10 text-left border-b border-[#f7f9fc] shrink-0"
+      style={{ background: '#363687' }}
+    >
+      <div className="shrink-0 text-white">{icon}</div>
+      <span className="flex-1 text-sm font-medium text-white leading-none">{label}</span>
+      {badge}
+      {isOpen
+        ? <ChevronUp size={20} className="text-white shrink-0" />
+        : <ChevronDown size={20} className="text-white shrink-0" />}
+    </button>
+  );
+}
+
+// ─── Create Design section body ───────────────────────────────────────────────
+function CreateDesignBody({ onSubmit }: { onSubmit: (name: string) => void }) {
+  const [name, setName] = useState('');
+  return (
+    <div className="px-3 py-3 bg-white border-b border-neutral-100 space-y-3">
+      <p className="text-sm font-semibold text-[#2a2f3c]">Create Design Set</p>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-neutral-700">Design set name</label>
+        <Input
+          placeholder="Value"
+          value={name}
+          onChange={e => setName(e.target.value)}
+          className="h-8 text-sm"
+        />
+        <p className="text-[11px] text-neutral-400">Name will apply to every pole in this source.</p>
+      </div>
+      <div className="flex gap-2 justify-end pt-1">
+        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setName('')}>
+          Cancel
+        </Button>
+        <Button
+          size="sm"
+          className="h-7 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white"
+          onClick={() => { if (name.trim()) { onSubmit(name.trim()); setName(''); } }}
+        >
+          Create
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Rules & Templates section body ──────────────────────────────────────────
+function RulesBody({
+  ruleSets, onRun,
+}: {
+  ruleSets: RuleSet[];
+  onRun: (id: string) => void;
+}) {
+  return (
+    <div className="bg-white border-b border-neutral-100">
+      {/* Rule Sets group */}
+      <div className="px-3 pt-2 pb-1">
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+          Rule Sets <span className="font-normal normal-case">{ruleSets.length}</span>
+        </p>
+      </div>
+      {ruleSets.map((rs, i) => (
+        <div key={rs.id}>
+          {i > 0 && <Separator />}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-[#2a2f3c] truncate">{rs.name}</p>
+              <p className="text-[11px] text-neutral-400">
+                {rs.rules.length} rules · {rs.createdAt}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="h-6 px-2.5 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white shrink-0 rounded-full"
+              onClick={() => onRun(rs.id)}
+            >
+              Run
+            </Button>
+          </div>
+        </div>
+      ))}
+
+      <Separator className="my-1" />
+
+      {/* Templates group (static demo) */}
+      <div className="px-3 pt-1 pb-1">
+        <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
+          Templates <span className="font-normal normal-case">1</span>
+        </p>
+      </div>
+      {[
+        { id: 't-1', name: 'Utility Pole Height Validation', date: '04/09/26', count: 2 },
+        { id: 't-2', name: 'Utility Pole Height Validation - v2', date: '04/10/26', count: 2 },
+      ].map((t, i) => (
+        <div key={t.id}>
+          {i > 0 && <Separator />}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-[#2a2f3c] truncate">{t.name}</p>
+              <p className="text-[11px] text-neutral-400">{t.count} rules · {t.date}</p>
+            </div>
+            <Button
+              size="sm"
+              className="h-6 px-2.5 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white shrink-0 rounded-full"
+              onClick={() => {}}
+            >
+              Run
+            </Button>
+          </div>
+        </div>
+      ))}
+      <div className="h-1" />
+    </div>
+  );
+}
+
+// ─── Results section body ─────────────────────────────────────────────────────
+function ResultsBody({ lastRun }: { lastRun: DesignSet['runHistory'][0] }) {
+  return (
+    <div className="bg-white border-b border-neutral-100 px-3 py-3 space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-[#2a2f3c]">Validation Results</p>
+        <p className="text-[11px] text-neutral-400 mt-0.5">
+          RuleSet: {lastRun.ruleSetName} | {new Date(lastRun.runAt).toLocaleDateString()}
+        </p>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <ValidationBadge status="pass"    count={lastRun.summary.pass}    size="md" />
+        <ValidationBadge status="warning" count={lastRun.summary.warning} size="md" />
+        <ValidationBadge status="review"  count={lastRun.summary.review}  size="md" />
+        <ValidationBadge status="fail"    count={lastRun.summary.fail}    size="md" />
+      </div>
+      <Separator />
+      <p className="text-xs font-semibold text-neutral-700">Rule Breakdown</p>
+      {[
+        { label: 'Comm to LCE Clearance', pass: lastRun.summary.pass, total: lastRun.summary.total },
+        { label: 'Ground Clearance',       pass: Math.round(lastRun.summary.pass * 0.9), total: lastRun.summary.total },
+      ].map(item => (
+        <div key={item.label} className="flex items-center gap-2">
+          <span className="text-sm text-[#2a2f3c] flex-1 truncate">{item.label}</span>
+          <span className="text-xs text-neutral-500 shrink-0">{item.pass} / {item.total}</span>
+          <Button variant="outline" size="sm" className="h-6 px-2.5 text-xs shrink-0">
+            View
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Main sidebar ─────────────────────────────────────────────────────────────
 export function LeftSidebar({
-  poles,
-  selectedPoleId,
-  onSelectPole,
-  designSets,
-  activeDesignSetId,
-  onSelectDesignSet,
-  onDuplicateDesignSet,
-  onRunValidation,
-  ruleSets,
-  lastRun,
+  poles, selectedPoleId, onSelectPole,
+  designSets: _designSets, activeDesignSetId: _activeDesignSetId,
+  onSelectDesignSet: _onSelectDesignSet,
+  onCreateDesignSet, onRunValidation,
+  ruleSets, lastRun, jobName,
 }: LeftSidebarProps) {
-  const [search, setSearch] = useState('');
-  const [createDesignOpen, setCreateDesignOpen] = useState(true);
-  const [rulesOpen, setRulesOpen] = useState(true);
-  const [resultsOpen, setResultsOpen] = useState(true);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [selectedRuleSetId, setSelectedRuleSetId] = useState(ruleSets[0]?.id ?? '');
+  const [search, setSearch]             = useState('');
+  const [showSearch, setShowSearch]     = useState(false);
+  const [createOpen, setCreateOpen]     = useState(false);
+  const [rulesOpen, setRulesOpen]       = useState(false);
+  const [resultsOpen, setResultsOpen]   = useState(false);
+  const [historyOpen, setHistoryOpen]   = useState(false);
 
   const filteredPoles = poles.filter(p =>
     p.poleNumber.toLowerCase().includes(search.toLowerCase())
   );
 
-  const activeSet = designSets.find(d => d.id === activeDesignSetId);
-
   return (
-    <aside className="flex flex-col w-[260px] shrink-0 border-r border-neutral-200 bg-white overflow-hidden">
-      {/* Job name header */}
+    <aside className="flex flex-col w-[320px] shrink-0 border-r border-neutral-200 overflow-hidden h-full">
+
+      {/* ── Header ── */}
       <div
-        className="flex items-center justify-between px-3 h-12 border-b border-white/20 shrink-0"
+        className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-[#f7f9fc]"
         style={{ background: '#363687' }}
       >
-        <span className="font-barlow font-semibold text-white text-sm">
-          {activeSet?.name ?? 'Louisville43592'}
+        <span className="font-barlow font-semibold text-white text-base flex-1 leading-none">
+          {jobName}
         </span>
-        <button className="text-white/70 hover:text-white transition-colors p-1">
-          <ChevronRight size={16} />
+        <button className="text-white hover:text-white/70 transition-colors shrink-0">
+          <ArrowLeftFromLine size={20} />
         </button>
       </div>
 
-      {/* Search + filter */}
-      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-neutral-100 shrink-0">
-        <LayoutGrid size={15} className="text-neutral-400 shrink-0" />
-        <div className="flex-1 flex items-center gap-1 bg-neutral-50 rounded border border-neutral-200 px-2 h-7">
-          <Search size={12} className="text-neutral-400 shrink-0" />
-          <input
-            type="text"
-            placeholder="Search poles..."
+      {/* ── Nav / Toolbar ── */}
+      <div
+        className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-[#f7f9fc]"
+        style={{ background: '#363687' }}
+      >
+        <button className="text-white hover:text-white/70 transition-colors shrink-0">
+          <LayoutList size={24} />
+        </button>
+
+        {/* Inline search (shown when search icon is clicked) */}
+        {showSearch && (
+          <Input
+            autoFocus
+            placeholder="Search…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="text-xs flex-1 bg-transparent outline-none text-neutral-700 placeholder:text-neutral-400"
+            onBlur={() => { if (!search) setShowSearch(false); }}
+            className="flex-1 h-7 text-xs bg-white/10 border-white/30 text-white placeholder:text-white/50 focus-visible:ring-0"
           />
+        )}
+
+        <div className="flex items-center gap-2 ml-auto shrink-0">
+          <button
+            onClick={() => setShowSearch(s => !s)}
+            className="text-white hover:text-white/70 transition-colors"
+          >
+            <Search size={24} />
+          </button>
+          <button className="text-white hover:text-white/70 transition-colors">
+            <ArrowUpDown size={24} />
+          </button>
+          <button className="text-white hover:text-white/70 transition-colors">
+            <ListFilter size={24} />
+          </button>
         </div>
-        <button className="p-1 rounded hover:bg-neutral-100 text-neutral-500">
-          <ArrowUpDown size={14} />
-        </button>
-        <button className="p-1 rounded hover:bg-neutral-100 text-neutral-500">
-          <SlidersHorizontal size={14} />
-        </button>
       </div>
 
-      {/* Poles list */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      {/* ── Pole list ── */}
+      <div className="flex-1 overflow-y-auto min-h-0 bg-white">
         {filteredPoles.map(pole => (
           <PoleListItem
             key={pole.id}
@@ -160,158 +336,50 @@ export function LeftSidebar({
         ))}
       </div>
 
-      {/* Bottom sections */}
-      <div className="border-t border-neutral-200 shrink-0">
+      {/* ── Bottom accordion sections ── */}
+      <div className="shrink-0 border-t border-neutral-200">
 
         {/* Create Design */}
-        <div className="border-b border-neutral-100">
-          <button
-            onClick={() => setCreateDesignOpen(o => !o)}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-neutral-50 transition-colors"
-          >
-            <Plus size={14} className="text-neutral-500" />
-            <span className="text-xs font-semibold text-neutral-700 flex-1">Create Design</span>
-            {createDesignOpen ? <ChevronDown size={13} className="text-neutral-400" /> : <ChevronRight size={13} className="text-neutral-400" />}
-          </button>
-          {createDesignOpen && (
-            <div className="px-3 pb-2.5 space-y-1.5">
-              {designSets.map(ds => (
-                <div
-                  key={ds.id}
-                  onClick={() => onSelectDesignSet(ds.id)}
-                  className={cn(
-                    'flex items-center gap-2 px-2 py-1.5 rounded text-xs cursor-pointer transition-colors',
-                    ds.id === activeDesignSetId
-                      ? 'bg-indigo-50 text-[#363687] border border-indigo-200'
-                      : 'text-neutral-600 hover:bg-neutral-50'
-                  )}
-                >
-                  <FileText size={12} className="shrink-0" />
-                  <span className="flex-1 truncate">{ds.name}</span>
-                  {ds.isDuplicate && (
-                    <span className="text-[10px] text-neutral-400 bg-neutral-100 px-1.5 py-0.5 rounded">
-                      Copy
-                    </span>
-                  )}
-                  <button
-                    onClick={e => { e.stopPropagation(); onDuplicateDesignSet(ds.id); }}
-                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-neutral-200 ml-auto"
-                    title="Duplicate"
-                  >
-                    <Copy size={11} className="text-neutral-400" />
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={() => onDuplicateDesignSet(activeDesignSetId)}
-                className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded text-xs text-neutral-500 hover:bg-neutral-50 border border-dashed border-neutral-200 transition-colors"
-              >
-                <Copy size={11} />
-                Duplicate active design
-              </button>
-            </div>
-          )}
-        </div>
+        <SectionHeader
+          icon={<Wand2 size={20} />}
+          label="Create Design"
+          isOpen={createOpen}
+          onToggle={() => setCreateOpen(o => !o)}
+        />
+        {createOpen && (
+          <CreateDesignBody onSubmit={name => { onCreateDesignSet(name); setCreateOpen(false); }} />
+        )}
 
         {/* Rules & Templates */}
-        <div className="border-b border-neutral-100">
-          <button
-            onClick={() => setRulesOpen(o => !o)}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-neutral-50 transition-colors"
-          >
-            <FileText size={14} className="text-neutral-500" />
-            <span className="text-xs font-semibold text-neutral-700 flex-1">Rules & Templates</span>
-            <span className="text-[10px] text-white bg-neutral-500 rounded px-1 py-0.5">
-              ↗
-            </span>
-            {rulesOpen ? <ChevronDown size={13} className="text-neutral-400" /> : <ChevronRight size={13} className="text-neutral-400" />}
-          </button>
-          {rulesOpen && (
-            <div className="px-3 pb-2.5 space-y-1.5">
-              {ruleSets.map(rs => (
-                <label
-                  key={rs.id}
-                  className={cn(
-                    'flex items-start gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors',
-                    rs.id === selectedRuleSetId ? 'bg-indigo-50' : 'hover:bg-neutral-50'
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="ruleSet"
-                    value={rs.id}
-                    checked={rs.id === selectedRuleSetId}
-                    onChange={() => setSelectedRuleSetId(rs.id)}
-                    className="mt-0.5 accent-[#363687]"
-                  />
-                  <div>
-                    <div className="text-xs font-medium text-neutral-700 leading-tight">{rs.name}</div>
-                    <div className="text-[10px] text-neutral-400 mt-0.5">{rs.rules.length} rules</div>
-                  </div>
-                </label>
-              ))}
-              <button
-                onClick={() => onRunValidation(selectedRuleSetId)}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded text-xs font-semibold text-white transition-colors"
-                style={{ background: '#363687' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#2d2d72')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#363687')}
-              >
-                <Play size={11} />
-                Run Validation
-              </button>
-            </div>
-          )}
-        </div>
+        <SectionHeader
+          icon={<BookMarked size={20} />}
+          label="Rules & Templates"
+          isOpen={rulesOpen}
+          onToggle={() => setRulesOpen(o => !o)}
+          badge={
+            <button className="text-white hover:text-white/70 transition-colors shrink-0 p-0.5">
+              <ExternalLink size={14} />
+            </button>
+          }
+        />
+        {rulesOpen && <RulesBody ruleSets={ruleSets} onRun={id => { onRunValidation(id); }} />}
 
         {/* Results */}
-        <div className="border-b border-neutral-100">
-          <button
-            onClick={() => setResultsOpen(o => !o)}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-neutral-50 transition-colors"
-          >
-            <FileText size={14} className="text-neutral-500" />
-            <span className="text-xs font-semibold text-neutral-700 flex-1">Results</span>
-            {lastRun && (
-              <div className="flex items-center gap-1">
-                <span className="text-[10px] text-[#b91c1c] font-semibold">{lastRun.summary.fail}F</span>
-                <span className="text-[10px] text-neutral-400">/</span>
-                <span className="text-[10px] text-[#1fa163] font-semibold">{lastRun.summary.pass}P</span>
-              </div>
-            )}
-            {resultsOpen ? <ChevronDown size={13} className="text-neutral-400" /> : <ChevronRight size={13} className="text-neutral-400" />}
-          </button>
-          {resultsOpen && lastRun && (
-            <div className="px-3 pb-2.5">
-              <div className="text-[10px] text-neutral-400 mb-1.5">Last run: {lastRun.ruleSetName}</div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { label: 'Pass', count: lastRun.summary.pass, color: 'text-[#1fa163]' },
-                  { label: 'Fail', count: lastRun.summary.fail, color: 'text-[#b91c1c]' },
-                  { label: 'Warning', count: lastRun.summary.warning, color: 'text-[#a16207]' },
-                  { label: 'Review', count: lastRun.summary.review, color: 'text-[#1d4ed8]' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center justify-between bg-neutral-50 rounded px-2 py-1">
-                    <span className="text-[10px] text-neutral-500">{item.label}</span>
-                    <span className={`text-xs font-bold ${item.color}`}>{item.count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <SectionHeader
+          icon={<CheckCircle size={20} />}
+          label="Results"
+          isOpen={resultsOpen}
+          onToggle={() => setResultsOpen(o => !o)}
+        />
+        {resultsOpen && lastRun && <ResultsBody lastRun={lastRun} />}
 
         {/* History */}
-        <div>
-          <button
-            onClick={() => setHistoryOpen(o => !o)}
-            className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-neutral-50 transition-colors"
-          >
-            <History size={14} className="text-neutral-500" />
-            <span className="text-xs font-semibold text-neutral-700 flex-1">History</span>
-            {historyOpen ? <ChevronDown size={13} className="text-neutral-400" /> : <ChevronRight size={13} className="text-neutral-400" />}
-          </button>
-        </div>
+        <SectionHeader
+          icon={<History size={20} />}
+          label="History"
+          isOpen={historyOpen}
+          onToggle={() => setHistoryOpen(o => !o)}
+        />
       </div>
     </aside>
   );
