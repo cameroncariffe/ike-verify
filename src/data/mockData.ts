@@ -1,4 +1,24 @@
-import type { Job, RuleSet, Pole } from '../types';
+import type { Job, RuleSet, Pole, SpanDetail, WireDetail, SpanGuyDetail } from '../types';
+
+const defaultSpans: SpanDetail[] = [
+  {
+    id: 'span-1', label: 'Span #1 – Building', color: 'red',
+    length: `76' 1" at 249.47°`, type: 'Building', environment: undefined,
+    midSpanIkePhoto: 1,
+  },
+];
+
+const defaultWires: WireDetail[] = [
+  { id: 'wire-1', label: 'Wire #1 — Service Drops > TRIPLEX #2 AWG > Slack', color: 'lime' },
+];
+
+const defaultSpanGuys: SpanGuyDetail[] = [
+  { id: 'sg-1', label: 'Span #1 – Building', color: 'blue' },
+  { id: 'sg-3', label: 'Span #3 – Fore Span', color: 'orange' },
+  { id: 'sg-4', label: 'Span #4 – Fore Span', color: 'amber' },
+  { id: 'sg-5', label: 'Span #5 – Fore Span', color: 'lime' },
+  { id: 'sg-6', label: 'Span #6 – Back Span', color: 'emerald' },
+];
 
 const basePoles: Pole[] = [
   {
@@ -223,6 +243,10 @@ function generateValidationResults(pole: Pole): import('../types').PoleValidatio
 
 const polesWithResults = basePoles.map(p => ({
   ...p,
+  spanCount: 6,
+  spans: defaultSpans,
+  wires: defaultWires,
+  spanGuys: defaultSpanGuys,
   validationResults: generateValidationResults(p)
 }));
 

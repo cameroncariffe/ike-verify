@@ -26,7 +26,6 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
   const poles = activeDesignSet.poles;
 
   const selectedPole = poles.find(p => p.id === selectedPoleId) ?? null;
-  const selectedPoleIndex = poles.findIndex(p => p.id === selectedPoleId);
 
   const handleSelectPole = useCallback((id: string) => {
     setSelectedPoleId(id);
@@ -54,18 +53,6 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'ew-resize';
   }, []);
-
-  const handlePrev = useCallback(() => {
-    if (selectedPoleIndex > 0) {
-      setSelectedPoleId(poles[selectedPoleIndex - 1].id);
-    }
-  }, [selectedPoleIndex, poles]);
-
-  const handleNext = useCallback(() => {
-    if (selectedPoleIndex < poles.length - 1) {
-      setSelectedPoleId(poles[selectedPoleIndex + 1].id);
-    }
-  }, [selectedPoleIndex, poles]);
 
   const handleSelectDesignSet = useCallback((id: string) => {
     onJobUpdate({ ...job, activeDesignSetId: id });
@@ -167,11 +154,6 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
             pole={selectedPole}
             showResults={showResults}
             onToggleResults={() => setShowResults(o => !o)}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            canPrev={selectedPoleIndex > 0}
-            canNext={selectedPoleIndex < poles.length - 1}
-            onClose={() => setPanelOpen(false)}
             width={panelWidth}
             onResizeStart={handleResizeStart}
           />

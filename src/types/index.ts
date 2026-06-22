@@ -28,6 +28,10 @@ export interface Pole {
   taggedDate: string;
   makeReady?: MakeReadyItem[];
   equipment?: EquipmentItem[];
+  spanCount?: number;
+  spans?: SpanDetail[];
+  wires?: WireDetail[];
+  spanGuys?: SpanGuyDetail[];
   validationResults?: PoleValidationResult[];
 }
 
@@ -41,6 +45,38 @@ export interface EquipmentItem {
   type: string;
   owner: string;
   height?: string;
+}
+
+export type DetailColor =
+  | 'neutral' | 'red' | 'orange' | 'amber' | 'lime' | 'emerald' | 'blue';
+
+export interface SpanDetail {
+  id: string;
+  label: string;
+  color: DetailColor;
+  length?: string;
+  type?: string;
+  environment?: string;
+  midSpanIkePhoto?: number;
+  note?: string;
+  commToSecEvergy?: string;
+  commToNeutEvergy?: string;
+  commToCommEvergy?: string;
+  commToSecNesc?: string;
+  commToNeutNesc?: string;
+  commToCommNesc?: string;
+}
+
+export interface WireDetail {
+  id: string;
+  label: string;
+  color: DetailColor;
+}
+
+export interface SpanGuyDetail {
+  id: string;
+  label: string;
+  color: DetailColor;
 }
 
 export interface ValidationRule {
