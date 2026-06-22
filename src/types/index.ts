@@ -32,6 +32,7 @@ export interface Pole {
   spans?: SpanDetail[];
   wires?: WireDetail[];
   spanGuys?: SpanGuyDetail[];
+  fieldIssues?: Record<string, FieldIssue>;
   validationResults?: PoleValidationResult[];
 }
 
@@ -50,6 +51,8 @@ export interface EquipmentItem {
 export type DetailColor =
   | 'neutral' | 'red' | 'orange' | 'amber' | 'lime' | 'emerald' | 'blue';
 
+export type FieldIssue = 'fail' | 'warning';
+
 export interface SpanDetail {
   id: string;
   label: string;
@@ -65,6 +68,7 @@ export interface SpanDetail {
   commToSecNesc?: string;
   commToNeutNesc?: string;
   commToCommNesc?: string;
+  issues?: Record<string, FieldIssue>;
 }
 
 export interface WireDetail {

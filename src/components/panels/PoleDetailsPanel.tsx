@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import {
-  Info, ChevronDown, Pencil, Copy, X, CircleX,
+  Info, ChevronDown, Pencil, Ruler, Copy, X, CircleX, CircleAlert,
 } from 'lucide-react';
-import type { Pole, DetailColor } from '../../types';
+import type { Pole, DetailColor, FieldIssue } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
 import { cn } from '../../lib/utils';
 
@@ -64,28 +64,40 @@ function SubtitleBox({ color, children }: { color: DetailColor; children: React.
   );
 }
 
-// ─── Detail row (label + value, supports dimmed / failing / edit) ───────────────
+const issueText: Record<FieldIssue, string> = {
+  fail: 'text-[#b91c1c]',
+  warning: 'text-[#a16207]',
+};
+const issueBorder: Record<FieldIssue, string> = {
+  fail: 'border-[#b91c1c]',
+  warning: 'border-[#a16207]',
+};
+
+// ─── Detail row (label + value, supports dimmed / issue / edit) ─────────────────
 function DetailRow({
-  label, value, dimmed = false, hasInfo = false, failing = false, edit = false,
-  options,
+  label, value, dimmed = false, hasInfo = false, edit = false, options,
+  issue, showResults = false,
 }: {
   label: string;
   value?: string | number;
   dimmed?: boolean;
   hasInfo?: boolean;
-  failing?: boolean;
   edit?: boolean;
   options?: string[];
+  issue?: FieldIssue;
+  showResults?: boolean;
 }) {
   const display = value ?? '–';
+  const activeIssue = showResults ? issue : undefined;
 
   return (
     <div className="flex items-start gap-2 min-h-6 pt-0.5 w-full">
       <div className="flex items-center gap-1 w-[200px] shrink-0">
-        {failing && <CircleX size={14} className="text-[#ef4444] shrink-0" />}
+        {activeIssue === 'fail' && <CircleX size={14} className="text-[#b91c1c] shrink-0" />}
+        {activeIssue === 'warning' && <CircleAlert size={14} className="text-[#a16207] shrink-0" />}
         <span className={cn(
           'text-sm leading-5 font-semibold whitespace-nowrap',
-          failing ? 'text-[#ef4444]' : dimmed ? 'text-neutral-400' : 'text-neutral-700'
+          activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700'
         )}>
           {label}
         </span>
@@ -99,7 +111,7 @@ function DetailRow({
               defaultValue={typeof value === 'string' ? value : undefined}
               className={cn(
                 'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687]',
-                failing ? 'border-[#ef4444]' : 'border-neutral-300'
+                activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
               )}
             >
               {options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -110,7 +122,7 @@ function DetailRow({
               placeholder="Description"
               className={cn(
                 'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687] placeholder:text-neutral-400',
-                failing ? 'border-[#ef4444]' : 'border-neutral-300'
+                activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
               )}
             />
           )}
@@ -125,7 +137,7 @@ function DetailRow({
         <div className="flex-1 min-w-0">
           <span className={cn(
             'text-sm leading-5 whitespace-pre-line',
-            failing ? 'text-[#ef4444]' : dimmed ? 'text-neutral-400' : 'text-neutral-700'
+            activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700'
           )}>
             {display}
           </span>
@@ -162,15 +174,15 @@ export function PoleDetailsPanel({
     );
   }
 
-  const results = pole.validationResults ?? [];
-  const failResults = results.filter(r => r.status === 'fail');
-  const warnResults = results.filter(r => r.status === 'warning');
-  const totalFail = failResults.length;
-  const totalWarn = warnResults.length;
+  const poleIssues = pole.fieldIssues ?? {};
 
-  // Map specific failing rules to the pole-attribute rows they affect.
-  const lceFails = showResults && failResults.some(r => r.ruleId === 'r-001');
-  const commFails = showResults && failResults.some(r => r.ruleId === 'r-002');
+  // Tally fail/warning flags across the pole and all its spans for the pills.
+  const allIssues: FieldIssue[] = [
+    ...Object.values(poleIssues),
+    ...(pole.spans ?? []).flatMap(s => Object.values(s.issues ?? {})),
+  ];
+  const totalFail = allIssues.filter(v => v === 'fail').length;
+  const totalWarn = allIssues.filter(v => v === 'warning').length;
 
   return (
     <aside
@@ -189,9 +201,9 @@ export function PoleDetailsPanel({
         <div className="flex items-center gap-2">
           <button
             className="flex items-center justify-center w-7 h-7 rounded-lg border border-[#e5e5e5] bg-white/10 text-white hover:bg-white/20 transition-colors"
-            title="Edit geometry"
+            title="Measure"
           >
-            <Pencil size={16} className="-rotate-90" />
+            <Ruler size={16} />
           </button>
           <button
             onClick={() => setEditMode(o => !o)}
@@ -269,9 +281,9 @@ export function PoleDetailsPanel({
         <DetailRow label="PLA Result" value={pole.plaResult} dimmed={!pole.plaResult} edit={editMode} />
         <DetailRow label="IKEphoto" value={pole.ikePhoto} hasInfo edit={editMode} />
         <DetailRow label="Mid Span IKEphoto" value={pole.midSpanIkePhoto} dimmed={!pole.midSpanIkePhoto} edit={editMode} />
-        <DetailRow label="Comm to LCE (Evergy)" value={pole.commToLce} failing={lceFails} edit={editMode} />
-        <DetailRow label="Comm to Comm (Evergy)" value={pole.commToComm} failing={commFails} edit={editMode} />
-        <DetailRow label="Comm to STLT (NESC)" value={pole.commToStlt} dimmed={!pole.commToStlt} edit={editMode} />
+        <DetailRow label="Comm to LCE (Evergy)" value={pole.commToLce} issue={poleIssues.commToLce} showResults={showResults} edit={editMode} />
+        <DetailRow label="Comm to Comm (Evergy)" value={pole.commToComm} issue={poleIssues.commToComm} showResults={showResults} edit={editMode} />
+        <DetailRow label="Comm to STLT (NESC)" value={pole.commToStlt} issue={poleIssues.commToStlt} dimmed={!pole.commToStlt && !poleIssues.commToStlt} showResults={showResults} edit={editMode} />
 
         {/* Lowest Controlling Electrical */}
         <SectionTitle title="Lowest Controlling Electrical" />
@@ -301,17 +313,17 @@ export function PoleDetailsPanel({
                 <SubtitleBox color={span.color}>{span.label}</SubtitleBox>
                 {spansExpanded && (
                   <div className="flex flex-col gap-2 px-2 pb-1">
-                    <DetailRow label="Span Length" value={span.length} edit={editMode} />
+                    <DetailRow label="Span Length" value={span.length} issue={span.issues?.length} showResults={showResults} edit={editMode} />
                     <DetailRow label="Type" value={span.type} edit={editMode} />
                     <DetailRow label="Environment" value={span.environment} dimmed={!span.environment} edit={editMode} />
                     <DetailRow label="Mid Span IKEphoto" value={span.midSpanIkePhoto} hasInfo edit={editMode} />
                     <DetailRow label="Note" value={span.note} dimmed={!span.note} edit={editMode} />
-                    <DetailRow label="Comm to Sec (Evergy)" value={span.commToSecEvergy} dimmed={!span.commToSecEvergy} edit={editMode} />
-                    <DetailRow label="Comm to Neut (Evergy)" value={span.commToNeutEvergy} dimmed={!span.commToNeutEvergy} edit={editMode} />
-                    <DetailRow label="Comm to Comm (Evergy)" value={span.commToCommEvergy} dimmed={!span.commToCommEvergy} edit={editMode} />
-                    <DetailRow label="Comm to Sec (NESC)" value={span.commToSecNesc} dimmed={!span.commToSecNesc} edit={editMode} />
-                    <DetailRow label="Comm to Neut (NESC)" value={span.commToNeutNesc} dimmed={!span.commToNeutNesc} edit={editMode} />
-                    <DetailRow label="Comm to Comm (NESC)" value={span.commToCommNesc} dimmed={!span.commToCommNesc} edit={editMode} />
+                    <DetailRow label="Comm to Sec (Evergy)" value={span.commToSecEvergy} dimmed={!span.commToSecEvergy} issue={span.issues?.commToSecEvergy} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Comm to Neut (Evergy)" value={span.commToNeutEvergy} dimmed={!span.commToNeutEvergy} issue={span.issues?.commToNeutEvergy} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Comm to Comm (Evergy)" value={span.commToCommEvergy} dimmed={!span.commToCommEvergy} issue={span.issues?.commToCommEvergy} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Comm to Sec (NESC)" value={span.commToSecNesc} dimmed={!span.commToSecNesc} issue={span.issues?.commToSecNesc} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Comm to Neut (NESC)" value={span.commToNeutNesc} dimmed={!span.commToNeutNesc} issue={span.issues?.commToNeutNesc} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Comm to Comm (NESC)" value={span.commToCommNesc} dimmed={!span.commToCommNesc} issue={span.issues?.commToCommNesc} showResults={showResults} edit={editMode} />
                   </div>
                 )}
               </div>
