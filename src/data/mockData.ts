@@ -1,8 +1,9 @@
-import type { Job, RuleSet, Pole, SpanDetail, WireDetail, SpanGuyDetail } from '../types';
+import type { Job, RuleSet, Pole, SpanDetail } from '../types';
 
 // Six mid-span records with realistic make-ready clearance values (inches).
-// NESC and Evergy (power-company) mid-span clearances are tracked separately;
-// a handful of values trip fail/warning flags used by the "Show results" view.
+// Each span owns its wires (Span → Wire hierarchy). NESC and Evergy
+// (power-company) mid-span clearances are tracked separately; a handful of
+// values trip fail/warning flags used by the "Show results" view.
 const defaultSpans: SpanDetail[] = [
   {
     id: 'span-1', label: 'Span #1 – Building', color: 'red',
@@ -10,56 +11,63 @@ const defaultSpans: SpanDetail[] = [
     midSpanIkePhoto: 1,
     commToSecEvergy: '40"', commToNeutEvergy: '44"', commToCommEvergy: '8"',
     commToSecNesc: '30"', commToNeutNesc: '30"', commToCommNesc: '4"',
+    wires: [
+      { id: 'w1-1', label: 'Wire #1 — Service Drops > TRIPLEX #2 AWG > Slack', color: 'lime' },
+    ],
     issues: { commToCommEvergy: 'fail' },
   },
   {
-    id: 'span-2', label: 'Span #2 – Fore Span', color: 'orange',
-    length: `132' 6" at 88.10°`, type: 'Fore Span', environment: 'Roadway crossing',
-    midSpanIkePhoto: 2,
+    id: 'span-2', label: 'Span #2 – Building', color: 'blue',
+    length: `54' 8" at 312.20°`, type: 'Building', environment: 'Residential',
+    midSpanIkePhoto: 1,
     commToSecEvergy: '46"', commToNeutEvergy: '49"', commToCommEvergy: '15"',
     commToSecNesc: '40"', commToNeutNesc: '40"', commToCommNesc: '12"',
+    wires: [
+      { id: 'w2-1', label: 'Wire #1 — Service Drops > TRIPLEX #2 AWG > Slack', color: 'lime' },
+    ],
   },
   {
-    id: 'span-3', label: 'Span #3 – Fore Span', color: 'amber',
+    id: 'span-3', label: 'Span #3 – Fore Span', color: 'orange',
     length: `145' 2" at 91.42°`, type: 'Fore Span', environment: 'Roadway crossing',
     midSpanIkePhoto: 1,
     commToSecEvergy: '43"', commToNeutEvergy: '47"', commToCommEvergy: '13"',
     commToSecNesc: '32"', commToNeutNesc: '34"', commToCommNesc: '12"',
+    wires: [
+      { id: 'w3-1', label: 'Wire #1 — Comm > Fiber 144ct > Tension', color: 'amber' },
+      { id: 'w3-2', label: 'Wire #2 — Comm > Coax > Lashed', color: 'orange' },
+    ],
     issues: { commToSecNesc: 'warning' },
   },
   {
-    id: 'span-4', label: 'Span #4 – Fore Span', color: 'lime',
+    id: 'span-4', label: 'Span #4 – Fore Span', color: 'amber',
     length: `118' 9" at 90.05°`, type: 'Fore Span', environment: 'Pedestrian',
     midSpanIkePhoto: 1,
     commToSecEvergy: '48"', commToNeutEvergy: '52"', commToCommEvergy: '16"',
     commToSecNesc: '42"', commToNeutNesc: '44"', commToCommNesc: '13"',
+    wires: [
+      { id: 'w4-1', label: 'Wire #1 — Comm > Fiber 144ct > Tension', color: 'amber' },
+    ],
   },
   {
-    id: 'span-5', label: 'Span #5 – Fore Span', color: 'emerald',
+    id: 'span-5', label: 'Span #5 – Fore Span', color: 'lime',
     length: `127' 4" at 89.71°`, type: 'Fore Span', environment: 'Pedestrian',
     midSpanIkePhoto: 2,
     commToSecEvergy: '45"', commToNeutEvergy: '50"', commToCommEvergy: '14"',
     commToSecNesc: '41"', commToNeutNesc: '43"', commToCommNesc: '12"',
+    wires: [
+      { id: 'w5-1', label: 'Wire #1 — Comm > Fiber 144ct > Tension', color: 'amber' },
+    ],
   },
   {
-    id: 'span-6', label: 'Span #6 – Back Span', color: 'blue',
+    id: 'span-6', label: 'Span #6 – Back Span', color: 'emerald',
     length: `98' 0" at 269.88°`, type: 'Back Span', environment: 'Residential',
     midSpanIkePhoto: 1,
     commToSecEvergy: '47"', commToNeutEvergy: '51"', commToCommEvergy: '15"',
     commToSecNesc: '40"', commToNeutNesc: '42"', commToCommNesc: '12"',
+    wires: [
+      { id: 'w6-1', label: 'Wire #1 — Comm > Coax > Lashed', color: 'orange' },
+    ],
   },
-];
-
-const defaultWires: WireDetail[] = [
-  { id: 'wire-1', label: 'Wire #1 — Service Drops > TRIPLEX #2 AWG > Slack', color: 'lime' },
-];
-
-const defaultSpanGuys: SpanGuyDetail[] = [
-  { id: 'sg-1', label: 'Span #1 – Building', color: 'blue' },
-  { id: 'sg-3', label: 'Span #3 – Fore Span', color: 'orange' },
-  { id: 'sg-4', label: 'Span #4 – Fore Span', color: 'amber' },
-  { id: 'sg-5', label: 'Span #5 – Fore Span', color: 'lime' },
-  { id: 'sg-6', label: 'Span #6 – Back Span', color: 'emerald' },
 ];
 
 // Pole-level attribute issues surfaced by "Show results".
@@ -293,8 +301,6 @@ const polesWithResults = basePoles.map(p => ({
   ...p,
   spanCount: defaultSpans.length,
   spans: defaultSpans,
-  wires: defaultWires,
-  spanGuys: defaultSpanGuys,
   fieldIssues: defaultFieldIssues,
   validationResults: generateValidationResults(p)
 }));

@@ -49,7 +49,7 @@ function SectionTitle({
         {title}
       </span>
       {count !== undefined && (
-        <span className="text-base leading-6 text-neutral-700">{count}</span>
+        <span className="text-base leading-6 text-neutral-700">({count})</span>
       )}
     </div>
   );
@@ -304,7 +304,7 @@ export function PoleDetailsPanel({
         {/* Anchor */}
         <SectionTitle title="Anchor" />
 
-        {/* Span */}
+        {/* Span (children of Make Ready) — each span owns its wires */}
         {pole.spans && pole.spans.length > 0 && (
           <>
             <SectionTitle title="Span" count={pole.spanCount ?? pole.spans.length} active />
@@ -324,29 +324,19 @@ export function PoleDetailsPanel({
                     <DetailRow label="Comm to Sec (NESC)" value={span.commToSecNesc} dimmed={!span.commToSecNesc} issue={span.issues?.commToSecNesc} showResults={showResults} edit={editMode} />
                     <DetailRow label="Comm to Neut (NESC)" value={span.commToNeutNesc} dimmed={!span.commToNeutNesc} issue={span.issues?.commToNeutNesc} showResults={showResults} edit={editMode} />
                     <DetailRow label="Comm to Comm (NESC)" value={span.commToCommNesc} dimmed={!span.commToCommNesc} issue={span.issues?.commToCommNesc} showResults={showResults} edit={editMode} />
+
+                    {/* Wire (children of this span) */}
+                    {span.wires && span.wires.length > 0 && (
+                      <>
+                        <SectionTitle title="Wire" count={span.wires.length} active />
+                        {span.wires.map(wire => (
+                          <SubtitleBox key={wire.id} color={wire.color}>{wire.label}</SubtitleBox>
+                        ))}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
-            ))}
-          </>
-        )}
-
-        {/* Wire */}
-        {pole.wires && pole.wires.length > 0 && (
-          <>
-            <SectionTitle title="Wire" count={pole.wires.length} active />
-            {pole.wires.map(wire => (
-              <SubtitleBox key={wire.id} color={wire.color}>{wire.label}</SubtitleBox>
-            ))}
-          </>
-        )}
-
-        {/* Span Guy */}
-        {pole.spanGuys && pole.spanGuys.length > 0 && (
-          <>
-            <SectionTitle title="Span Guy" />
-            {pole.spanGuys.map(sg => (
-              <SubtitleBox key={sg.id} color={sg.color}>{sg.label}</SubtitleBox>
             ))}
           </>
         )}

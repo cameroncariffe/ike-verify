@@ -68,6 +68,7 @@ export interface SpanDetail {
   commToSecNesc?: string;
   commToNeutNesc?: string;
   commToCommNesc?: string;
+  wires?: WireDetail[];
   issues?: Record<string, FieldIssue>;
 }
 
