@@ -3,6 +3,7 @@ import { Navbar } from '../components/layout/Navbar';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
 import { MapControls } from '../components/map/MapControls';
+import { PoleImages } from '../components/map/PoleImages';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
 import type { Job, DesignSet } from '../types';
 import { mockRuleSets } from '../data/mockData';
@@ -21,11 +22,15 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
   const [showResults, setShowResults] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
+  const [imagesExpanded, setImagesExpanded] = useState(false);
 
   const activeDesignSet = job.designSets.find(d => d.id === job.activeDesignSetId)!;
   const poles = activeDesignSet.poles;
 
-  const selectedPole = poles.find(p => p.id === selectedPoleId) ?? null;
+  const selectedIndex = poles.findIndex(p => p.id === selectedPoleId);
+  const selectedPole = selectedIndex >= 0 ? poles[selectedIndex] : null;
+  const prevPole = selectedIndex > 0 ? poles[selectedIndex - 1] : null;
+  const nextPole = selectedIndex >= 0 && selectedIndex < poles.length - 1 ? poles[selectedIndex + 1] : null;
 
   const handleSelectPole = useCallback((id: string) => {
     setSelectedPoleId(id);
@@ -57,6 +62,7 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
   const handleSelectDesignSet = useCallback((id: string) => {
     onJobUpdate({ ...job, activeDesignSetId: id });
     setSelectedPoleId(null);
+    setImagesExpanded(false);
   }, [job, onJobUpdate]);
 
   const handleCreateDesignSet = useCallback((name: string) => {
@@ -130,23 +136,38 @@ export function ValidationWorkbench({ job, onJobUpdate }: ValidationWorkbenchPro
       <Navbar account={`ikeGPS > ${job.account}`} />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <LeftSidebar
-          poles={poles}
-          selectedPoleId={selectedPoleId}
-          onSelectPole={handleSelectPole}
-          designSets={job.designSets}
-          activeDesignSetId={job.activeDesignSetId}
-          onSelectDesignSet={handleSelectDesignSet}
-          onCreateDesignSet={handleCreateDesignSet}
-          onRunValidation={handleRunValidation}
+        {!imagesExpanded && (
+          <LeftSidebar
+            poles={poles}
+            selectedPoleId={selectedPoleId}
+            onSelectPole={handleSelectPole}
+            designSets={job.designSets}
+            activeDesignSetId={job.activeDesignSetId}
+            onSelectDesignSet={handleSelectDesignSet}
+            onCreateDesignSet={handleCreateDesignSet}
+            onRunValidation={handleRunValidation}
           ruleSets={mockRuleSets}
           lastRun={lastRun}
+          runHistory={activeDesignSet.runHistory}
           jobName={job.name}
-        />
+          />
+        )}
 
         <main className="flex flex-1 min-w-0 overflow-hidden relative">
           <MapView />
-          <MapControls panelOpen={panelOpen} onTogglePanel={handleTogglePanel} />
+          {!imagesExpanded && (
+            <MapControls panelOpen={panelOpen} onTogglePanel={handleTogglePanel} />
+          )}
+          {selectedPole && (
+            <PoleImages
+              pole={selectedPole}
+              prevPole={prevPole}
+              nextPole={nextPole}
+              expanded={imagesExpanded}
+              onToggleExpanded={() => setImagesExpanded(o => !o)}
+              onSelectPole={handleSelectPole}
+            />
+          )}
         </main>
 
         {panelOpen && (

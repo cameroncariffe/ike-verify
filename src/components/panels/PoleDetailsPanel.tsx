@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, createContext, useContext } from 'react';
 import {
   Info, ChevronDown, Pencil, Ruler, Copy, X, CircleX, CircleAlert,
 } from 'lucide-react';
@@ -13,6 +13,17 @@ interface PoleDetailsPanelProps {
   width: number;
   onResizeStart: (e: React.MouseEvent) => void;
 }
+
+const NARROW_PANEL_WIDTH = 420;
+
+const NarrowPanelContext = createContext(false);
+
+function useNarrowPanel() {
+  return useContext(NarrowPanelContext);
+}
+
+/** Clamp text to three lines without collapsing row height. */
+const clampLines = 'line-clamp-3 break-words leading-tight';
 
 const leftBorder: Record<DetailColor, string> = {
   neutral: 'border-[#d4d4d4]',
@@ -44,12 +55,15 @@ function SectionTitle({
   title: string; count?: number; active?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 h-8 pt-2 pb-1 border-b border-[#d4d4d4] w-full">
-      <span className={cn('text-base leading-6 font-semibold', active ? 'text-neutral-700' : 'text-neutral-400')}>
+    <div className="flex items-center gap-2 min-h-8 pt-2 pb-1 border-b border-[#d4d4d4] w-full">
+      <span className={cn(
+        'text-base leading-6 font-semibold min-w-0',
+        active ? 'text-neutral-700' : 'text-neutral-400',
+      )}>
         {title}
       </span>
       {count !== undefined && (
-        <span className="text-base leading-6 text-neutral-700">({count})</span>
+        <span className="text-base leading-6 text-neutral-700 shrink-0">({count})</span>
       )}
     </div>
   );
@@ -58,8 +72,8 @@ function SectionTitle({
 // ─── Colored subtitle bar (spans / wires) ───────────────────────────────────────
 function SubtitleBox({ color, children }: { color: DetailColor; children: React.ReactNode }) {
   return (
-    <div className={cn('flex items-center min-h-9 p-2 bg-[#f5f5f5] border-l-4 w-full', leftBorder[color])}>
-      <span className="flex-1 text-sm leading-5 text-neutral-700">{children}</span>
+    <div className={cn('flex items-start p-2 bg-[#f5f5f5] border-l-4 w-full', leftBorder[color])}>
+      <span className={cn('flex-1 min-w-0 text-sm text-neutral-700', clampLines)}>{children}</span>
     </div>
   );
 }
@@ -87,62 +101,68 @@ function DetailRow({
   issue?: FieldIssue;
   showResults?: boolean;
 }) {
+  const narrow = useNarrowPanel();
   const display = value ?? '–';
   const activeIssue = showResults ? issue : undefined;
 
-  return (
-    <div className="flex items-start gap-2 min-h-6 pt-0.5 w-full">
-      <div className="flex items-center gap-1 w-[200px] shrink-0">
-        {activeIssue === 'fail' && <CircleX size={14} className="text-[#b91c1c] shrink-0" />}
-        {activeIssue === 'warning' && <CircleAlert size={14} className="text-[#a16207] shrink-0" />}
-        <span className={cn(
-          'text-sm leading-5 font-semibold whitespace-nowrap',
-          activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700'
-        )}>
-          {label}
-        </span>
-        {hasInfo && <Info size={14} className="text-neutral-400 shrink-0" />}
-      </div>
+  const labelTone = activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700';
+  const valueTone = labelTone;
 
-      {edit ? (
-        <div className="flex items-center gap-1 flex-1 min-w-0">
-          {options ? (
-            <select
-              defaultValue={typeof value === 'string' ? value : undefined}
-              className={cn(
-                'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687]',
-                activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
-              )}
-            >
-              {options.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          ) : (
-            <input
-              defaultValue={value === undefined ? '' : String(value)}
-              placeholder="Description"
-              className={cn(
-                'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687] placeholder:text-neutral-400',
-                activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
-              )}
-            />
+  const labelEl = (
+    <div className="flex items-start gap-1 min-w-0">
+      {activeIssue === 'fail' && <CircleX size={14} className="text-[#b91c1c] shrink-0 mt-0.5" />}
+      {activeIssue === 'warning' && <CircleAlert size={14} className="text-[#a16207] shrink-0 mt-0.5" />}
+      <span className={cn('text-sm font-semibold min-w-0', clampLines, labelTone)}>{label}</span>
+      {hasInfo && <Info size={14} className="text-neutral-400 shrink-0 mt-0.5" />}
+    </div>
+  );
+
+  const valueEl = edit ? (
+    <div className="flex items-center gap-1 min-w-0 w-full">
+      {options ? (
+        <select
+          defaultValue={typeof value === 'string' ? value : undefined}
+          className={cn(
+            'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687]',
+            activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
           )}
-          <button className="shrink-0 p-1 text-neutral-400 hover:text-neutral-600" title="Copy">
-            <Copy size={15} />
-          </button>
-          <button className="shrink-0 p-1 text-neutral-400 hover:text-neutral-600" title="Clear">
-            <X size={15} />
-          </button>
-        </div>
+        >
+          {options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
       ) : (
-        <div className="flex-1 min-w-0">
-          <span className={cn(
-            'text-sm leading-5 whitespace-pre-line',
-            activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700'
-          )}>
-            {display}
-          </span>
-        </div>
+        <input
+          defaultValue={value === undefined ? '' : String(value)}
+          placeholder="Description"
+          className={cn(
+            'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687] placeholder:text-neutral-400',
+            activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
+          )}
+        />
       )}
+      <button className="shrink-0 p-1 text-neutral-400 hover:text-neutral-600" title="Copy">
+        <Copy size={15} />
+      </button>
+      <button className="shrink-0 p-1 text-neutral-400 hover:text-neutral-600" title="Clear">
+        <X size={15} />
+      </button>
+    </div>
+  ) : (
+    <span className={cn('text-sm min-w-0 block whitespace-pre-line', clampLines, valueTone)}>{display}</span>
+  );
+
+  if (narrow) {
+    return (
+      <div className="py-0.5 w-full">
+        {labelEl}
+        <div className="min-w-0">{valueEl}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-[minmax(0,38%)_minmax(0,1fr)] gap-x-3 items-start py-0.5 w-full">
+      {labelEl}
+      <div className="min-w-0">{valueEl}</div>
     </div>
   );
 }
@@ -156,9 +176,11 @@ export function PoleDetailsPanel({
 }: PoleDetailsPanelProps) {
   const [editMode, setEditMode] = useState(false);
   const [spansExpanded, setSpansExpanded] = useState(true);
+  const narrow = width < NARROW_PANEL_WIDTH;
 
   if (!pole) {
     return (
+      <NarrowPanelContext.Provider value={narrow}>
       <aside
         style={{ width }}
         className="relative shrink-0 flex flex-col border-l border-neutral-200 bg-white"
@@ -171,6 +193,7 @@ export function PoleDetailsPanel({
           Select a pole to view details
         </div>
       </aside>
+      </NarrowPanelContext.Provider>
     );
   }
 
@@ -185,6 +208,7 @@ export function PoleDetailsPanel({
   const totalWarn = allIssues.filter(v => v === 'warning').length;
 
   return (
+    <NarrowPanelContext.Provider value={narrow}>
     <aside
       style={{ width }}
       className="relative shrink-0 flex flex-col border-l border-neutral-200 bg-white overflow-hidden"
@@ -197,7 +221,10 @@ export function PoleDetailsPanel({
       </div>
 
       {/* Header row 2: edit + pole number + show results + info + expand */}
-      <div className="flex items-center gap-4 px-3 h-12 border-b border-[#f7f9fc] shrink-0" style={{ background: '#363687' }}>
+      <div className={cn(
+        'flex items-center gap-2 px-3 border-b border-[#f7f9fc] shrink-0',
+        narrow ? 'flex-wrap min-h-12 py-2' : 'h-12 gap-4',
+      )} style={{ background: '#363687' }}>
         <div className="flex items-center gap-2">
           <button
             className="flex items-center justify-center w-7 h-7 rounded-lg border border-[#e5e5e5] bg-white/10 text-white hover:bg-white/20 transition-colors"
@@ -234,7 +261,7 @@ export function PoleDetailsPanel({
               showResults ? 'left-[18px]' : 'left-0.5'
             )} />
           </div>
-          <span className="whitespace-nowrap text-sm">Show results</span>
+          <span className={cn('whitespace-nowrap text-sm', narrow && 'sr-only')}>Show results</span>
         </button>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -342,5 +369,6 @@ export function PoleDetailsPanel({
         )}
       </div>
     </aside>
+    </NarrowPanelContext.Provider>
   );
 }

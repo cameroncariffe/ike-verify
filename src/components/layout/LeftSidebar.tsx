@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import {
   Search, ArrowUpDown, ListFilter, LayoutList, List, X, Pencil,
-  ChevronDown, ChevronUp, ArrowLeftFromLine, ArrowRightFromLine,
-  Wand2, BookMarked, CheckCircle, History, ExternalLink,
+  ArrowLeftFromLine, ArrowRightFromLine,
+  Wand2, BookMarked, CheckCircle, History,
   MoreVertical, UtilityPole,
   Circle, CircleCheck, CircleX, CircleAlert,
   Copy, StickyNote, Save, SquarePen, Upload,
@@ -10,10 +10,10 @@ import {
 import type { Pole, DesignSet, RuleSet, ValidationStatus } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
 import { Button } from '../ui/button';
-import { Input } from '../ui/input';
 import { Separator } from '../ui/separator';
 import { Checkbox } from '../ui/checkbox';
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover';
+import { CreateDesignDialog } from './CreateDesignDialog';
 import { cn } from '../../lib/utils';
 
 // ─── Pole status helpers ──────────────────────────────────────────────────────
@@ -49,6 +49,7 @@ interface LeftSidebarProps {
   onRunValidation: (ruleSetId: string) => void;
   ruleSets: RuleSet[];
   lastRun?: DesignSet['runHistory'][0];
+  runHistory?: DesignSet['runHistory'];
   jobName: string;
   onBulkEdit?: (poleIds: string[]) => void;
 }
@@ -165,70 +166,75 @@ function PoleListItem({
   );
 }
 
-// ─── Section accordion header ─────────────────────────────────────────────────
-function SectionHeader({
-  icon, label, isOpen, onToggle, badge,
+// ─── Bottom action button base (shared styling) ───────────────────────────────
+const actionButtonClass = (active: boolean) => cn(
+  'w-full flex items-center gap-2 h-9 px-2 rounded-lg text-left transition-colors cursor-pointer',
+  active
+    ? 'bg-white text-[#363687] shadow-sm'
+    : 'bg-[#5454a6] text-white hover:bg-[#6262bd] active:bg-[#4a4a99]'
+);
+
+// ─── Bottom action button (launches a flyout to the right) ────────────────────
+function SidebarActionButton({
+  icon, label, open, onOpenChange, badge, children, contentClassName,
 }: {
   icon: React.ReactNode;
   label: string;
-  isOpen: boolean;
-  onToggle: () => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   badge?: React.ReactNode;
+  children: React.ReactNode;
+  contentClassName?: string;
 }) {
   return (
-    <button
-      onClick={onToggle}
-      className="w-full flex items-center gap-2 px-2 h-10 text-left border-b border-[#f7f9fc] shrink-0"
-      style={{ background: '#363687' }}
-    >
-      <div className="shrink-0 text-white">{icon}</div>
-      <span className="flex-1 text-sm font-medium text-white leading-none">{label}</span>
-      {badge}
-      {isOpen
-        ? <ChevronUp size={20} className="text-white shrink-0" />
-        : <ChevronDown size={20} className="text-white shrink-0" />}
-    </button>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger className={actionButtonClass(open)}>
+        <span className="shrink-0 flex items-center">{icon}</span>
+        <span className="flex-1 min-w-0 text-sm font-medium leading-5 truncate">{label}</span>
+        {badge}
+      </PopoverTrigger>
+      {/* Opens to the right of the button, bottom edge aligned with the button row */}
+      <PopoverContent
+        side="right"
+        align="end"
+        sideOffset={8}
+        className={cn('w-[304px] p-0 max-h-[70vh] overflow-y-auto', contentClassName)}
+      >
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
 
-// ─── Create Design section body ───────────────────────────────────────────────
-function CreateDesignBody({ onSubmit }: { onSubmit: (name: string) => void }) {
-  const [name, setName] = useState('');
+// ─── History flyout body ──────────────────────────────────────────────────────
+function HistoryBody({ runs }: { runs: DesignSet['runHistory'] }) {
   return (
-    <div className="px-3 py-3 bg-white border-b border-neutral-100 space-y-3">
-      <p className="text-sm font-semibold text-[#2a2f3c]">Create Design Set</p>
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium text-neutral-700">Design set name</label>
-        <Input
-          placeholder="Value"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          className="h-8 text-sm"
-        />
-        <p className="text-[11px] text-neutral-400">Name will apply to every pole in this source.</p>
-      </div>
-      <div className="flex gap-2 justify-end pt-1">
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setName('')}>
-          Cancel
-        </Button>
-        <Button
-          size="sm"
-          className="h-7 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white"
-          onClick={() => { if (name.trim()) { onSubmit(name.trim()); setName(''); } }}
-        >
-          Create
-        </Button>
-      </div>
+    <div className="bg-white px-3 py-3 space-y-2">
+      <p className="text-sm font-semibold text-[#2a2f3c]">History</p>
+      {runs.length === 0 ? (
+        <p className="text-[11px] text-neutral-400">No validation runs yet.</p>
+      ) : (
+        runs.map(run => (
+          <div key={run.id} className="flex items-center gap-2 py-1 border-b border-neutral-100 last:border-0">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-[#2a2f3c] truncate">{run.ruleSetName}</p>
+              <p className="text-[11px] text-neutral-400">{new Date(run.runAt).toLocaleString()}</p>
+            </div>
+            <span className="text-xs text-neutral-500 shrink-0">{run.summary.total} poles</span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
 
 // ─── Rules & Templates section body ──────────────────────────────────────────
 function RulesBody({
-  ruleSets, onRun,
+  ruleSets, onRun, onManage,
 }: {
   ruleSets: RuleSet[];
   onRun: (id: string) => void;
+  onManage: () => void;
 }) {
   return (
     <div className="bg-white border-b border-neutral-100">
@@ -288,7 +294,17 @@ function RulesBody({
           </div>
         </div>
       ))}
-      <div className="h-1" />
+
+      {/* Sticky footer action — links to the full Rules & Templates management page (future) */}
+      <div className="sticky bottom-0 bg-white border-t border-neutral-200 p-2">
+        <Button
+          variant="outline"
+          className="w-full h-8 text-sm font-medium"
+          onClick={onManage}
+        >
+          Manage Rules & Templates
+        </Button>
+      </div>
     </div>
   );
 }
@@ -470,7 +486,7 @@ export function LeftSidebar({
   designSets: _designSets, activeDesignSetId: _activeDesignSetId,
   onSelectDesignSet: _onSelectDesignSet,
   onCreateDesignSet, onRunValidation,
-  ruleSets, lastRun, jobName, onBulkEdit,
+  ruleSets, lastRun, runHistory, jobName, onBulkEdit,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed]       = useState(false);
   const [search, setSearch]             = useState('');
@@ -709,51 +725,61 @@ export function LeftSidebar({
         ))}
       </div>
 
-      {/* ── Bottom accordion sections ── */}
-      <div className="shrink-0 border-t border-neutral-200">
+      {/* ── Bottom action buttons ── */}
+      <div className="shrink-0 flex flex-col gap-1 p-2" style={{ background: '#363687' }}>
 
-        {/* Create Design */}
-        <SectionHeader
-          icon={<Wand2 size={20} />}
-          label="Create Design"
-          isOpen={createOpen}
-          onToggle={() => setCreateOpen(o => !o)}
-        />
-        {createOpen && (
-          <CreateDesignBody onSubmit={name => { onCreateDesignSet(name); setCreateOpen(false); }} />
-        )}
+        {/* Create Design — opens a centered dialog */}
+        <button
+          onClick={() => setCreateOpen(true)}
+          className={actionButtonClass(createOpen)}
+        >
+          <span className="shrink-0 flex items-center"><Wand2 size={20} /></span>
+          <span className="flex-1 min-w-0 text-sm font-medium leading-5 truncate text-left">Create Design</span>
+        </button>
 
         {/* Rules & Templates */}
-        <SectionHeader
+        <SidebarActionButton
           icon={<BookMarked size={20} />}
           label="Rules & Templates"
-          isOpen={rulesOpen}
-          onToggle={() => setRulesOpen(o => !o)}
-          badge={
-            <button className="text-white hover:text-white/70 transition-colors shrink-0 p-0.5">
-              <ExternalLink size={14} />
-            </button>
-          }
-        />
-        {rulesOpen && <RulesBody ruleSets={ruleSets} onRun={id => { onRunValidation(id); }} />}
+          open={rulesOpen}
+          onOpenChange={setRulesOpen}
+        >
+          <RulesBody
+            ruleSets={ruleSets}
+            onRun={id => { onRunValidation(id); }}
+            onManage={() => setRulesOpen(false)}
+          />
+        </SidebarActionButton>
 
         {/* Results */}
-        <SectionHeader
+        <SidebarActionButton
           icon={<CheckCircle size={20} />}
           label="Results"
-          isOpen={resultsOpen}
-          onToggle={() => setResultsOpen(o => !o)}
-        />
-        {resultsOpen && lastRun && <ResultsBody lastRun={lastRun} />}
+          open={resultsOpen}
+          onOpenChange={setResultsOpen}
+        >
+          {lastRun
+            ? <ResultsBody lastRun={lastRun} />
+            : <div className="bg-white px-3 py-3"><p className="text-[11px] text-neutral-400">No results yet — run a rule set to see validation results.</p></div>}
+        </SidebarActionButton>
 
         {/* History */}
-        <SectionHeader
+        <SidebarActionButton
           icon={<History size={20} />}
           label="History"
-          isOpen={historyOpen}
-          onToggle={() => setHistoryOpen(o => !o)}
-        />
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+        >
+          <HistoryBody runs={runHistory ?? (lastRun ? [lastRun] : [])} />
+        </SidebarActionButton>
       </div>
+
+      {/* Create Design dialog (centered) */}
+      <CreateDesignDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onSubmit={name => onCreateDesignSet(name)}
+      />
     </aside>
   );
 }
