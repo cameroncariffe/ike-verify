@@ -24,13 +24,21 @@ const VARIANT_OPTIONS = ['Proposed', 'Existing', 'Remedy'];
 const ATTACHMENT_TYPE_OPTIONS = ['Fiber', 'Copper', 'Coax', 'Power'];
 const STRAND_OPTIONS = ['1/4" EHS', '3/8" EHS', '6M', '10M'];
 
+export interface VersionFormMeta {
+  name: string;
+  description?: string;
+  variantType?: string;
+}
+
 interface CreateDesignDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (name: string) => void;
+  onSubmit: (meta: VersionFormMeta) => void;
+  /** Optional context shown in the header, e.g. the version it branches from. */
+  sourceLabel?: string;
 }
 
-export function CreateDesignDialog({ open, onOpenChange, onSubmit }: CreateDesignDialogProps) {
+export function CreateDesignDialog({ open, onOpenChange, onSubmit, sourceLabel }: CreateDesignDialogProps) {
   const [step, setStep] = useState<Step>(0);
   const [form, setForm] = useState<DesignForm>(EMPTY_FORM);
 
@@ -45,7 +53,11 @@ export function CreateDesignDialog({ open, onOpenChange, onSubmit }: CreateDesig
   };
 
   const handleCreate = () => {
-    onSubmit(form.name.trim() || 'Untitled design');
+    onSubmit({
+      name: form.name.trim() || 'Untitled version',
+      description: form.description.trim() || undefined,
+      variantType: form.variantType || undefined,
+    });
     close();
   };
 
@@ -55,7 +67,12 @@ export function CreateDesignDialog({ open, onOpenChange, onSubmit }: CreateDesig
       onMouseDown={e => { if (e.target === e.currentTarget) close(); }}
     >
       <div className="w-[480px] max-w-full flex flex-col gap-6 p-8 rounded-xl border border-[#e5e5e5] bg-white shadow-[0px_10px_15px_rgba(0,0,0,0.1),0px_4px_6px_rgba(0,0,0,0.1)]">
-        <h2 className="font-semibold text-xl leading-6 text-[#0a0a0a]">Create design</h2>
+        <div className="flex flex-col gap-1">
+          <h2 className="font-semibold text-xl leading-6 text-[#0a0a0a]">Create version</h2>
+          {sourceLabel && (
+            <p className="text-xs text-[#737373]">Branching from <span className="font-medium text-[#3c404d]">{sourceLabel}</span></p>
+          )}
+        </div>
 
         {/* Step tabs */}
         <div className="flex items-center w-full">
@@ -77,8 +94,8 @@ export function CreateDesignDialog({ open, onOpenChange, onSubmit }: CreateDesig
         {/* Step body */}
         {step === 0 && (
           <div className="flex flex-col gap-4 w-full">
-            <Field label="Design name">
-              <TextInput value={form.name} onChange={v => set({ name: v })} placeholder="Value" />
+            <Field label="Version name">
+              <TextInput value={form.name} onChange={v => set({ name: v })} placeholder="e.g. Fiber make-ready" />
             </Field>
             <Field label="Description">
               <textarea
@@ -120,7 +137,7 @@ export function CreateDesignDialog({ open, onOpenChange, onSubmit }: CreateDesig
 
         {step === 2 && (
           <div className="flex flex-col gap-4 w-full text-sm text-black">
-            <ReviewRow label="Design name:" value={form.name || '—'} />
+            <ReviewRow label="Version name:" value={form.name || '—'} />
             <div className="flex flex-col gap-1 w-full">
               <p className="font-medium">Description:</p>
               <p className="font-normal text-[#3c404d]">{form.description || '—'}</p>

@@ -1,17 +1,28 @@
 import { useState, createContext, useContext } from 'react';
 import {
-  Info, ChevronDown, Pencil, Ruler, Copy, X, CircleX, CircleAlert,
+  Info, ChevronDown, Pencil, Ruler, Copy, X, CircleX, CircleAlert, Lock, GitBranchPlus,
 } from 'lucide-react';
 import type { Pole, DetailColor, FieldIssue } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
+import { getPoleResultStatus } from '../../data/mockData';
 import { cn } from '../../lib/utils';
 
 interface PoleDetailsPanelProps {
   pole: Pole | null;
-  showResults: boolean;
-  onToggleResults: () => void;
   width: number;
   onResizeStart: (e: React.MouseEvent) => void;
+  /** Read-only when viewing a non-active version or the imported Original. */
+  readOnly?: boolean;
+  /** Why the panel is read-only, to tailor the guidance shown. */
+  readOnlyReason?: 'original' | 'inactive' | null;
+  /** Whether a per-pole variant can be created from here. */
+  canCreateVariant?: boolean;
+  /** Persist an edit to the viewed version's pole. */
+  onUpdatePole?: (poleId: string, patch: Partial<Pole>) => void;
+  /** Create an editable per-pole version nested under this pole. */
+  onCreateVersionFromPole?: (poleId: string) => void;
+  /** Make the viewed version the active (editable) one. */
+  onSetActive?: () => void;
 }
 
 const NARROW_PANEL_WIDTH = 420;
@@ -90,7 +101,7 @@ const issueBorder: Record<FieldIssue, string> = {
 // ─── Detail row (label + value, supports dimmed / issue / edit) ─────────────────
 function DetailRow({
   label, value, dimmed = false, hasInfo = false, edit = false, options,
-  issue, showResults = false,
+  issue, field, onCommit,
 }: {
   label: string;
   value?: string | number;
@@ -99,14 +110,17 @@ function DetailRow({
   edit?: boolean;
   options?: string[];
   issue?: FieldIssue;
-  showResults?: boolean;
+  field?: keyof Pole;
+  onCommit?: (field: keyof Pole, value: string) => void;
 }) {
   const narrow = useNarrowPanel();
   const display = value ?? '–';
-  const activeIssue = showResults ? issue : undefined;
+  const activeIssue = issue;
 
   const labelTone = activeIssue ? issueText[activeIssue] : dimmed ? 'text-neutral-400' : 'text-neutral-700';
   const valueTone = labelTone;
+
+  const commit = (v: string) => { if (field && onCommit) onCommit(field, v); };
 
   const labelEl = (
     <div className="flex items-start gap-1 min-w-0">
@@ -122,6 +136,7 @@ function DetailRow({
       {options ? (
         <select
           defaultValue={typeof value === 'string' ? value : undefined}
+          onChange={e => commit(e.target.value)}
           className={cn(
             'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687]',
             activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
@@ -133,6 +148,7 @@ function DetailRow({
         <input
           defaultValue={value === undefined ? '' : String(value)}
           placeholder="Description"
+          onBlur={e => commit(e.target.value)}
           className={cn(
             'flex-1 min-w-0 h-7 px-2 text-sm rounded border bg-white text-neutral-700 outline-none focus:border-[#363687] placeholder:text-neutral-400',
             activeIssue ? issueBorder[activeIssue] : 'border-neutral-300'
@@ -169,14 +185,23 @@ function DetailRow({
 
 export function PoleDetailsPanel({
   pole,
-  showResults,
-  onToggleResults,
   width,
   onResizeStart,
+  readOnly = false,
+  readOnlyReason = null,
+  canCreateVariant = false,
+  onUpdatePole,
+  onCreateVersionFromPole,
+  onSetActive,
 }: PoleDetailsPanelProps) {
   const [editMode, setEditMode] = useState(false);
   const [spansExpanded, setSpansExpanded] = useState(true);
   const narrow = width < NARROW_PANEL_WIDTH;
+  // Read-only versions can never enter edit mode.
+  const isEditing = editMode && !readOnly;
+  const commit = (field: keyof Pole, value: string) => {
+    if (pole) onUpdatePole?.(pole.id, { [field]: value } as Partial<Pole>);
+  };
 
   if (!pole) {
     return (
@@ -197,13 +222,16 @@ export function PoleDetailsPanel({
     );
   }
 
-  const poleIssues = pole.fieldIssues ?? {};
+  // Errors are only surfaced for poles that actually have an error icon
+  // (a failing rule result). Passing/unverified poles show no flags.
+  const poleHasError = getPoleResultStatus(pole) === 'fail';
+  const poleIssues = poleHasError ? (pole.fieldIssues ?? {}) : {};
 
   // Tally fail/warning flags across the pole and all its spans for the pills.
-  const allIssues: FieldIssue[] = [
+  const allIssues: FieldIssue[] = poleHasError ? [
     ...Object.values(poleIssues),
     ...(pole.spans ?? []).flatMap(s => Object.values(s.issues ?? {})),
-  ];
+  ] : [];
   const totalFail = allIssues.filter(v => v === 'fail').length;
   const totalWarn = allIssues.filter(v => v === 'warning').length;
 
@@ -233,36 +261,25 @@ export function PoleDetailsPanel({
             <Ruler size={16} />
           </button>
           <button
-            onClick={() => setEditMode(o => !o)}
+            onClick={() => { if (!readOnly) setEditMode(o => !o); }}
+            disabled={readOnly}
             className={cn(
               'flex items-center justify-center w-7 h-7 rounded-lg border transition-colors',
-              editMode
-                ? 'border-white bg-white text-[#363687]'
-                : 'border-[#e5e5e5] bg-white/10 text-white hover:bg-white/20'
+              readOnly
+                ? 'border-[#e5e5e5] bg-white/5 text-white/40 cursor-not-allowed'
+                : isEditing
+                  ? 'border-white bg-white text-[#363687]'
+                  : 'border-[#e5e5e5] bg-white/10 text-white hover:bg-white/20'
             )}
-            title="Edit attributes"
+            title={readOnly ? 'Imported design is read-only' : 'Edit attributes'}
           >
-            <Pencil size={16} />
+            {readOnly ? <Lock size={16} /> : <Pencil size={16} />}
           </button>
         </div>
 
         <span className="font-barlow font-semibold text-white text-base flex-1 truncate">
-          {pole.poleNumber}
+          {pole.variantLabel ? `${pole.poleNumber} · ${pole.variantLabel}` : pole.poleNumber}
         </span>
-
-        {/* Show results toggle */}
-        <button onClick={onToggleResults} className="flex items-center gap-2 text-white shrink-0">
-          <div className={cn(
-            'relative w-8 h-[18px] rounded-full transition-colors',
-            showResults ? 'bg-[#4ade80]' : 'bg-white/30'
-          )}>
-            <div className={cn(
-              'absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-all',
-              showResults ? 'left-[18px]' : 'left-0.5'
-            )} />
-          </div>
-          <span className={cn('whitespace-nowrap text-sm', narrow && 'sr-only')}>Show results</span>
-        </button>
 
         <div className="flex items-center gap-2 shrink-0">
           <button className="text-white/80 hover:text-white transition-colors" title="Info">
@@ -281,8 +298,50 @@ export function PoleDetailsPanel({
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto min-h-0 px-4 py-2 flex flex-col gap-2">
 
+        {/* Read-only notice — tailored to why the version can't be edited */}
+        {readOnly && (
+          <div className="flex items-start gap-2 rounded-lg border border-[#e3e1f3] bg-[#f4f3fb] px-3 py-2">
+            <Lock size={15} className="text-[#363687] shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              {readOnlyReason === 'inactive' ? (
+                <>
+                  <p className="text-[13px] font-medium text-[#2a2f3c] leading-snug">Viewing a non-active version</p>
+                  <p className="text-[11px] text-neutral-500 leading-snug mt-0.5">
+                    This version is read-only. Set it as active to make changes.
+                  </p>
+                  {onSetActive && (
+                    <button
+                      onClick={onSetActive}
+                      className="mt-1.5 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-[#363687] text-white text-xs font-medium hover:bg-[#2f2f78] transition-colors"
+                    >
+                      <GitBranchPlus size={13} />
+                      Set as active
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-[13px] font-medium text-[#2a2f3c] leading-snug">Imported design (read-only)</p>
+                  <p className="text-[11px] text-neutral-500 leading-snug mt-0.5">
+                    Run rules to check it, then create a version to make changes.
+                  </p>
+                  {canCreateVariant && onCreateVersionFromPole && pole && (
+                    <button
+                      onClick={() => onCreateVersionFromPole(pole.id)}
+                      className="mt-1.5 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-[#363687] text-white text-xs font-medium hover:bg-[#2f2f78] transition-colors"
+                    >
+                      <GitBranchPlus size={13} />
+                      Create version of this pole
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Result summary pills */}
-        {showResults && (totalFail > 0 || totalWarn > 0) && (
+        {(totalFail > 0 || totalWarn > 0) && (
           <div className="flex items-center gap-2 pb-1">
             {totalFail > 0 && <ValidationBadge status="fail" count={totalFail} />}
             {totalWarn > 0 && <ValidationBadge status="warning" count={totalWarn} />}
@@ -290,27 +349,27 @@ export function PoleDetailsPanel({
         )}
 
         {/* Pole attributes */}
-        <DetailRow label="Status" value={pole.status} edit={editMode} options={['HOA Complete', 'In Progress', 'Pending Review']} />
-        <DetailRow label="OP#" value={pole.opNumber} edit={editMode} />
-        <DetailRow label="Id" value={pole.externalId} edit={editMode} />
-        <DetailRow label="Tag Photos" value={pole.tagPhotos} dimmed={!pole.tagPhotos} edit={editMode} />
-        <DetailRow label="Type" value={pole.type} edit={editMode} options={[pole.type, 'Douglas Fir > 3 > 45']} />
-        <DetailRow label="Owner" value={pole.owner} edit={editMode} options={[pole.owner, 'ELECTRIC > 002-Evergy']} />
-        <DetailRow label={'Circumference (")'} value={pole.circumference} dimmed={!pole.circumference} edit={editMode} />
-        <DetailRow label="Tip" value={pole.tip} edit={editMode} />
+        <DetailRow label="Status" value={pole.status} edit={isEditing} options={['HOA Complete', 'In Progress', 'Pending Review']} field="status" onCommit={commit} />
+        <DetailRow label="OP#" value={pole.opNumber} edit={isEditing} field="opNumber" onCommit={commit} />
+        <DetailRow label="Id" value={pole.externalId} edit={isEditing} field="externalId" onCommit={commit} />
+        <DetailRow label="Tag Photos" value={pole.tagPhotos} dimmed={!pole.tagPhotos} edit={isEditing} />
+        <DetailRow label="Type" value={pole.type} edit={isEditing} options={[pole.type, 'Douglas Fir > 3 > 45']} field="type" onCommit={commit} />
+        <DetailRow label="Owner" value={pole.owner} edit={isEditing} options={[pole.owner, 'ELECTRIC > 002-Evergy']} field="owner" onCommit={commit} />
+        <DetailRow label={'Circumference (")'} value={pole.circumference} dimmed={!pole.circumference} edit={isEditing} field="circumference" onCommit={commit} />
+        <DetailRow label="Tip" value={pole.tip} edit={isEditing} field="tip" onCommit={commit} />
         <DetailRow
           label="Location"
           value={`Latitude: ${pole.location.lat}\nLongitude: ${pole.location.lng}\nAltitude: ${pole.location.altitude}`}
           hasInfo
-          edit={editMode}
+          edit={isEditing}
         />
-        <DetailRow label="Note" value={pole.note} dimmed={!pole.note} edit={editMode} />
-        <DetailRow label="PLA Result" value={pole.plaResult} dimmed={!pole.plaResult} edit={editMode} />
-        <DetailRow label="IKEphoto" value={pole.ikePhoto} hasInfo edit={editMode} />
-        <DetailRow label="Mid Span IKEphoto" value={pole.midSpanIkePhoto} dimmed={!pole.midSpanIkePhoto} edit={editMode} />
-        <DetailRow label="Comm to LCE (Evergy)" value={pole.commToLce} issue={poleIssues.commToLce} showResults={showResults} edit={editMode} />
-        <DetailRow label="Comm to Comm (Evergy)" value={pole.commToComm} issue={poleIssues.commToComm} showResults={showResults} edit={editMode} />
-        <DetailRow label="Comm to STLT (NESC)" value={pole.commToStlt} issue={poleIssues.commToStlt} dimmed={!pole.commToStlt && !poleIssues.commToStlt} showResults={showResults} edit={editMode} />
+        <DetailRow label="Note" value={pole.note} dimmed={!pole.note} edit={isEditing} field="note" onCommit={commit} />
+        <DetailRow label="PLA Result" value={pole.plaResult} dimmed={!pole.plaResult} edit={isEditing} field="plaResult" onCommit={commit} />
+        <DetailRow label="IKEphoto" value={pole.ikePhoto} hasInfo edit={isEditing} />
+        <DetailRow label="Mid Span IKEphoto" value={pole.midSpanIkePhoto} dimmed={!pole.midSpanIkePhoto} edit={isEditing} />
+        <DetailRow label="Comm to LCE (Evergy)" value={pole.commToLce} issue={poleIssues.commToLce} edit={isEditing} field="commToLce" onCommit={commit} />
+        <DetailRow label="Comm to Comm (Evergy)" value={pole.commToComm} issue={poleIssues.commToComm} edit={isEditing} field="commToComm" onCommit={commit} />
+        <DetailRow label="Comm to STLT (NESC)" value={pole.commToStlt} issue={poleIssues.commToStlt} dimmed={!pole.commToStlt && !poleIssues.commToStlt} edit={isEditing} field="commToStlt" onCommit={commit} />
 
         {/* Lowest Controlling Electrical */}
         <SectionTitle title="Lowest Controlling Electrical" />
@@ -335,22 +394,24 @@ export function PoleDetailsPanel({
         {pole.spans && pole.spans.length > 0 && (
           <>
             <SectionTitle title="Span" count={pole.spanCount ?? pole.spans.length} active />
-            {pole.spans.map(span => (
+            {pole.spans.map(span => {
+              const sIssues = poleHasError ? (span.issues ?? {}) : {};
+              return (
               <div key={span.id} className="flex flex-col gap-2 w-full">
                 <SubtitleBox color={span.color}>{span.label}</SubtitleBox>
                 {spansExpanded && (
                   <div className="flex flex-col gap-2 px-2 pb-1">
-                    <DetailRow label="Span Length" value={span.length} issue={span.issues?.length} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Type" value={span.type} edit={editMode} />
-                    <DetailRow label="Environment" value={span.environment} dimmed={!span.environment} edit={editMode} />
-                    <DetailRow label="Mid Span IKEphoto" value={span.midSpanIkePhoto} hasInfo edit={editMode} />
-                    <DetailRow label="Note" value={span.note} dimmed={!span.note} edit={editMode} />
-                    <DetailRow label="Comm to Sec (Evergy)" value={span.commToSecEvergy} dimmed={!span.commToSecEvergy} issue={span.issues?.commToSecEvergy} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Comm to Neut (Evergy)" value={span.commToNeutEvergy} dimmed={!span.commToNeutEvergy} issue={span.issues?.commToNeutEvergy} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Comm to Comm (Evergy)" value={span.commToCommEvergy} dimmed={!span.commToCommEvergy} issue={span.issues?.commToCommEvergy} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Comm to Sec (NESC)" value={span.commToSecNesc} dimmed={!span.commToSecNesc} issue={span.issues?.commToSecNesc} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Comm to Neut (NESC)" value={span.commToNeutNesc} dimmed={!span.commToNeutNesc} issue={span.issues?.commToNeutNesc} showResults={showResults} edit={editMode} />
-                    <DetailRow label="Comm to Comm (NESC)" value={span.commToCommNesc} dimmed={!span.commToCommNesc} issue={span.issues?.commToCommNesc} showResults={showResults} edit={editMode} />
+                    <DetailRow label="Span Length" value={span.length} issue={sIssues.length} edit={isEditing} />
+                    <DetailRow label="Type" value={span.type} edit={isEditing} />
+                    <DetailRow label="Environment" value={span.environment} dimmed={!span.environment} edit={isEditing} />
+                    <DetailRow label="Mid Span IKEphoto" value={span.midSpanIkePhoto} hasInfo edit={isEditing} />
+                    <DetailRow label="Note" value={span.note} dimmed={!span.note} edit={isEditing} />
+                    <DetailRow label="Comm to Sec (Evergy)" value={span.commToSecEvergy} dimmed={!span.commToSecEvergy} issue={sIssues.commToSecEvergy} edit={isEditing} />
+                    <DetailRow label="Comm to Neut (Evergy)" value={span.commToNeutEvergy} dimmed={!span.commToNeutEvergy} issue={sIssues.commToNeutEvergy} edit={isEditing} />
+                    <DetailRow label="Comm to Comm (Evergy)" value={span.commToCommEvergy} dimmed={!span.commToCommEvergy} issue={sIssues.commToCommEvergy} edit={isEditing} />
+                    <DetailRow label="Comm to Sec (NESC)" value={span.commToSecNesc} dimmed={!span.commToSecNesc} issue={sIssues.commToSecNesc} edit={isEditing} />
+                    <DetailRow label="Comm to Neut (NESC)" value={span.commToNeutNesc} dimmed={!span.commToNeutNesc} issue={sIssues.commToNeutNesc} edit={isEditing} />
+                    <DetailRow label="Comm to Comm (NESC)" value={span.commToCommNesc} dimmed={!span.commToCommNesc} issue={sIssues.commToCommNesc} edit={isEditing} />
 
                     {/* Wire (children of this span) */}
                     {span.wires && span.wires.length > 0 && (
@@ -364,7 +425,8 @@ export function PoleDetailsPanel({
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </>
         )}
       </div>

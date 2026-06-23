@@ -1,4 +1,4 @@
-import type { Job, RuleSet, Pole, SpanDetail } from '../types';
+import type { Job, RuleSet, Pole, SpanDetail, DesignSet, ValidationRun, VersionStatus, PoleValidationResult, FieldIssue } from '../types';
 
 // Six mid-span records with realistic make-ready clearance values (inches).
 // Each span owns its wires (Span → Wire hierarchy). NESC and Evergy
@@ -70,12 +70,6 @@ const defaultSpans: SpanDetail[] = [
   },
 ];
 
-// Pole-level attribute issues surfaced by "Show results".
-const defaultFieldIssues: Record<string, import('../types').FieldIssue> = {
-  commToLce: 'fail',
-  commToComm: 'fail',
-};
-
 const basePoles: Pole[] = [
   {
     id: 'p-3971', poleNumber: '3971', opNumber: '019', externalId: '019-ST00579640',
@@ -112,7 +106,7 @@ const basePoles: Pole[] = [
   {
     id: 'p-3975', poleNumber: '3975', opNumber: '019', externalId: '019-ST00579655',
     status: 'In Progress', type: 'Douglas Fir > 3 > 45', owner: 'ELECTRIC > 002-Evergy',
-    tip: "38' 0\"", ikePhoto: 3, commToLce: '72"', commToComm: '18"',
+    tip: "38' 0\"", ikePhoto: 3, commToLce: '72"', commToComm: '8"',
     location: { lat: 37.6528, lng: -97.3272, altitude: "1219' 8\"" },
     taggedDate: '09/10/24 03:00PM',
   },
@@ -140,7 +134,7 @@ const basePoles: Pole[] = [
   {
     id: 'p-3979', poleNumber: '3979', opNumber: '019', externalId: '019-ST00579659',
     status: 'Pending Review', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
-    tip: "36' 0\"", ikePhoto: 2, commToLce: '77"', commToComm: '20"',
+    tip: "36' 0\"", ikePhoto: 2, commToLce: '30"', commToComm: '20"',
     location: { lat: 37.6512, lng: -97.3284, altitude: "1219' 0\"" },
     taggedDate: '07/07/24 03:30AM',
   },
@@ -154,7 +148,7 @@ const basePoles: Pole[] = [
   {
     id: 'p-3981', poleNumber: '3981', opNumber: '020', externalId: '020-ST00579661',
     status: 'In Progress', type: 'Douglas Fir > 3 > 50', owner: 'ELECTRIC > 002-Evergy',
-    tip: "42' 1\"", ikePhoto: 2, commToLce: '65"', commToComm: '16"',
+    tip: "42' 1\"", ikePhoto: 2, commToLce: '65"', commToComm: '9"',
     location: { lat: 37.6504, lng: -97.329, altitude: "1217' 7\"" },
     taggedDate: '11/12/24 08:00AM',
   },
@@ -254,30 +248,32 @@ export const mockRuleSets: RuleSet[] = [
   }
 ];
 
-function generateValidationResults(pole: Pole): import('../types').PoleValidationResult[] {
-  const commToLce = pole.commToLce ? parseInt(pole.commToLce) : 0;
-  const commToComm = pole.commToComm ? parseInt(pole.commToComm) : 0;
+// ─── Rule-run engine ──────────────────────────────────────────────────────────
+// Computes per-pole validation results from the pole's current measurements.
+// Re-running after edits reflects those changes, which drives the iterate loop.
+// Missing measurements are treated as "not applicable" (pass) so only genuine
+// out-of-spec values fail — keeping the demo's failures intentional.
+export function computePoleResults(pole: Pole): PoleValidationResult[] {
+  const commToLce = pole.commToLce ? parseInt(pole.commToLce) : null;
+  const commToComm = pole.commToComm ? parseInt(pole.commToComm) : null;
 
   return [
     {
       ruleId: 'r-001',
       ruleName: 'Comm to LCE Min Clearance',
-      status: commToLce >= 40 ? 'pass' : 'fail',
-      message: commToLce >= 40 ? `${commToLce}" clearance ✓` : `${commToLce}" is below 40" minimum`,
+      status: commToLce === null || commToLce >= 40 ? 'pass' : 'fail',
+      message: commToLce === null
+        ? 'No Comm to LCE measurement (n/a)'
+        : commToLce >= 40 ? `${commToLce}" clearance ✓` : `${commToLce}" is below 40" minimum`,
       severity: 'error'
     },
     {
       ruleId: 'r-002',
       ruleName: 'Comm to Comm Min Clearance',
-      status: commToComm >= 12 ? 'pass' : 'fail',
-      message: commToComm >= 12 ? `${commToComm}" clearance ✓` : `${commToComm}" is below 12" minimum`,
-      severity: 'error'
-    },
-    {
-      ruleId: 'r-003',
-      ruleName: 'Ground Clearance',
-      status: pole.ikePhoto > 0 ? 'pass' : 'warning',
-      message: pole.ikePhoto > 0 ? 'Ground clearance verified via IKEphoto' : 'No IKEphoto to verify ground clearance',
+      status: commToComm === null || commToComm >= 12 ? 'pass' : 'fail',
+      message: commToComm === null
+        ? 'No Comm to Comm measurement (n/a)'
+        : commToComm >= 12 ? `${commToComm}" clearance ✓` : `${commToComm}" is below 12" minimum`,
       severity: 'error'
     },
     {
@@ -297,38 +293,113 @@ function generateValidationResults(pole: Pole): import('../types').PoleValidatio
   ];
 }
 
-const polesWithResults = basePoles.map(p => ({
+// Map failing/warning rule results back to the editable fields they flag, so the
+// right panel highlights exactly the fields that drove the failure.
+export function deriveFieldIssues(results: PoleValidationResult[]): Record<string, FieldIssue> {
+  const issues: Record<string, FieldIssue> = {};
+  for (const r of results) {
+    if (r.status !== 'fail' && r.status !== 'warning') continue;
+    const issue: FieldIssue = r.status === 'fail' ? 'fail' : 'warning';
+    if (r.ruleId === 'r-001') issues.commToLce = issue;
+    if (r.ruleId === 'r-002') issues.commToComm = issue;
+  }
+  return issues;
+}
+
+/** Worst-case status for a single pole from its validation results. */
+export function getPoleResultStatus(pole: Pole): 'pass' | 'warning' | 'fail' | 'review' | 'unverified' {
+  const results = pole.validationResults ?? [];
+  if (results.length === 0) return 'unverified';
+  if (results.some(r => r.status === 'fail')) return 'fail';
+  if (results.some(r => r.status === 'review')) return 'review';
+  if (results.some(r => r.status === 'warning')) return 'warning';
+  return 'pass';
+}
+
+// Recompute results + derived field issues for a pole and all of its variants.
+function runOnePole(pole: Pole): Pole {
+  const results = computePoleResults(pole);
+  return {
+    ...pole,
+    validationResults: results,
+    fieldIssues: deriveFieldIssues(results),
+    variants: pole.variants?.map(runOnePole),
+  };
+}
+
+/** Run a rule set against a set of poles: returns updated poles + a run record. */
+export function runRulesOnPoles(
+  poles: Pole[],
+  ruleSet: RuleSet,
+): { poles: Pole[]; run: ValidationRun } {
+  const updated = poles.map(runOnePole);
+
+  // Summary counts the top-level poles (variants are versions of a pole).
+  const summary = { total: updated.length, pass: 0, fail: 0, warning: 0, review: 0 };
+  for (const p of updated) {
+    switch (getPoleResultStatus(p)) {
+      case 'fail': summary.fail++; break;
+      case 'warning': summary.warning++; break;
+      case 'review': summary.review++; break;
+      default: summary.pass++; break;
+    }
+  }
+
+  const run: ValidationRun = {
+    id: `run-${Date.now()}`,
+    ruleSetId: ruleSet.id,
+    ruleSetName: ruleSet.name,
+    runAt: new Date().toISOString(),
+    summary,
+  };
+  return { poles: updated, run };
+}
+
+/** Roll-up status used by the version tree (derived from the latest run). */
+export function getVersionStatus(ds: DesignSet): VersionStatus {
+  const run = ds.runHistory[0];
+  if (!run) return 'unverified';
+  if (run.summary.fail > 0) return 'failing';
+  if (run.summary.warning > 0 || run.summary.review > 0) return 'warnings';
+  return 'passed';
+}
+
+// Poles start "unverified" (neutral) with no flagged fields until a rule run.
+const initialPoles = basePoles.map(p => ({
   ...p,
   spanCount: defaultSpans.length,
   spans: defaultSpans,
-  fieldIssues: defaultFieldIssues,
-  validationResults: generateValidationResults(p)
+  fieldIssues: {} as Record<string, FieldIssue>,
+  validationResults: [] as PoleValidationResult[],
 }));
 
-export const mockJob: Job = {
-  id: 'job-louisville-43592',
-  name: 'Louisville43592',
-  source: 'IKE Office Pro',
-  importedAt: '2025-08-18T10:45:00Z',
-  account: 'Account Demo',
-  activeDesignSetId: 'ds-original',
-  designSets: [
-    {
-      id: 'ds-original',
-      name: 'Original Design',
-      label: 'Original',
-      isDuplicate: false,
-      createdAt: '2025-08-18T10:45:00Z',
-      poles: polesWithResults,
-      runHistory: [
-        {
-          id: 'run-001',
-          ruleSetId: 'rs-nesc-2023',
-          ruleSetName: 'NESC 2023 Clearance Rules',
-          runAt: '2025-08-18T11:00:00Z',
-          summary: { total: 18, pass: 10, fail: 5, warning: 2, review: 1 }
-        }
-      ]
-    }
-  ]
-};
+/** Build a fresh job (deep-cloned) — used on load and to reset the prototype. */
+export function makeInitialJob(): Job {
+  const job: Job = {
+    id: 'job-louisville-43592',
+    name: 'Louisville43592',
+    source: 'IKE Office Pro',
+    importedAt: '2025-08-18T10:45:00Z',
+    account: 'Account Demo',
+    activeDesignSetId: 'ds-original',
+    designSets: [
+      {
+        id: 'ds-original',
+        name: 'Original (Imported)',
+        label: 'Original',
+        isDuplicate: false,
+        isOriginal: true,
+        readOnly: true,
+        scope: 'full',
+        description: 'Imported from IKE Office Pro. Read-only — create a version to make changes.',
+        createdAt: '2025-08-18T10:45:00Z',
+        poles: initialPoles,
+        runHistory: [],
+      },
+    ],
+  };
+  // Deep clone so each reset/load gets independent objects.
+  return structuredClone(job);
+}
+
+export const mockJob: Job = makeInitialJob();

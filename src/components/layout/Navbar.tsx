@@ -1,10 +1,12 @@
-import { Menu, Building2, HelpCircle, User } from 'lucide-react';
+import { Menu, Building2, HelpCircle, User, RotateCcw } from 'lucide-react';
+import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover';
 
 interface NavbarProps {
   account?: string;
+  onResetPrototype?: () => void;
 }
 
-export function Navbar({ account = 'ikeGPS > Account Demo' }: NavbarProps) {
+export function Navbar({ account = 'ikeGPS > Account Demo', onResetPrototype }: NavbarProps) {
   return (
     <header
       className="flex items-center shrink-0 w-full select-none"
@@ -19,10 +21,30 @@ export function Navbar({ account = 'ikeGPS > Account Demo' }: NavbarProps) {
       {/* ── Left group ── */}
       <div className="flex items-center gap-3 shrink-0">
 
-        {/* Hamburger menu icon */}
-        <div className="flex items-center justify-center h-[31px] w-6 shrink-0">
-          <Menu size={24} color="white" strokeWidth={1.75} />
-        </div>
+        {/* Hamburger menu — opens the app menu (prototype controls) */}
+        <Popover>
+          <PopoverTrigger
+            className="flex items-center justify-center h-[31px] w-6 shrink-0 text-white hover:text-white/70 transition-colors"
+            title="Menu"
+          >
+            <Menu size={24} color="currentColor" strokeWidth={1.75} />
+          </PopoverTrigger>
+          <PopoverContent align="start" sideOffset={8} className="w-[240px] p-1">
+            <div className="px-2 py-1.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Prototype</p>
+            </div>
+            <button
+              onClick={() => onResetPrototype?.()}
+              className="flex w-full items-center gap-2 min-h-9 px-2 py-1.5 rounded-md text-left hover:bg-[#f5f5f5] transition-colors"
+            >
+              <RotateCcw size={16} className="text-[#0a0a0a] shrink-0" />
+              <div className="min-w-0">
+                <p className="text-sm text-[#0a0a0a] leading-tight">Reset prototype</p>
+                <p className="text-[11px] text-neutral-400 leading-tight">Restore the imported job and clear all versions</p>
+              </div>
+            </button>
+          </PopoverContent>
+        </Popover>
 
         {/* IKE Logo: logomark + wordmark side by side */}
         <div className="flex items-center h-[31px] shrink-0" style={{ gap: '4.5px' }}>

@@ -34,6 +34,14 @@ export interface Pole {
   spanGuys?: SpanGuyDetail[];
   fieldIssues?: Record<string, FieldIssue>;
   validationResults?: PoleValidationResult[];
+  /** Pole-level versions, nested under this pole in the list. */
+  variants?: Pole[];
+  /** For a variant: the id of the base pole it was created from. */
+  variantOf?: string;
+  /** Display label for a variant, e.g. "Version 1". */
+  variantLabel?: string;
+  /** ISO timestamp for when a variant was created. */
+  createdAt?: string;
 }
 
 export interface MakeReadyItem {
@@ -108,12 +116,26 @@ export interface RuleSet {
   createdAt: string;
 }
 
+export type VersionStatus = 'unverified' | 'passed' | 'warnings' | 'failing';
+
 export interface DesignSet {
   id: string;
   name: string;
   label: string;
   parentId?: string;
   isDuplicate: boolean;
+  /** True only for the imported job version. */
+  isOriginal?: boolean;
+  /** Read-only versions (the Original import) can be run but not edited. */
+  readOnly?: boolean;
+  /** Optional notes describing the work this version captures. */
+  description?: string;
+  /** e.g. Proposed / Existing / Remedy. */
+  variantType?: string;
+  /** 'full' versions hold every pole; 'partial' versions own a subset. */
+  scope?: 'full' | 'partial';
+  /** For partial versions: the pole ids this version owns/focuses on. */
+  poleIds?: string[];
   createdAt: string;
   poles: Pole[];
   runHistory: ValidationRun[];
