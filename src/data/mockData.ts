@@ -316,14 +316,13 @@ export function getPoleResultStatus(pole: Pole): 'pass' | 'warning' | 'fail' | '
   return 'pass';
 }
 
-// Recompute results + derived field issues for a pole and all of its variants.
+// Recompute results + derived field issues for a pole.
 function runOnePole(pole: Pole): Pole {
   const results = computePoleResults(pole);
   return {
     ...pole,
     validationResults: results,
     fieldIssues: deriveFieldIssues(results),
-    variants: pole.variants?.map(runOnePole),
   };
 }
 
@@ -334,7 +333,6 @@ export function runRulesOnPoles(
 ): { poles: Pole[]; run: ValidationRun } {
   const updated = poles.map(runOnePole);
 
-  // Summary counts the top-level poles (variants are versions of a pole).
   const summary = { total: updated.length, pass: 0, fail: 0, warning: 0, review: 0 };
   for (const p of updated) {
     switch (getPoleResultStatus(p)) {

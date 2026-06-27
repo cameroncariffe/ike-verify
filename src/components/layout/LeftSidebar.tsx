@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
-  Search, ArrowUpDown, ListFilter, LayoutList, List, X,
+  Search, ArrowUpDown, ListFilter, X,
   ArrowLeftFromLine, ArrowRightFromLine,
-  Wand2, BookMarked, CheckCircle, History,
+  BookMarked, CheckCircle, History, Play,
   MoreVertical, UtilityPole,
   Circle, CircleCheck, CircleX, CircleAlert,
-  Copy, StickyNote, Save, SquarePen, Upload,
-  ChevronDown, Lock, GitBranchPlus, Trash2, FolderGit2, Check, CornerDownRight,
+  SquarePen, Pencil, Upload,
+  ChevronDown, Lock, GitBranchPlus, Trash2, FolderGit2, Check, BadgeCheck,
 } from 'lucide-react';
 import type { Pole, DesignSet, RuleSet, ValidationStatus, VersionStatus } from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
@@ -15,6 +15,7 @@ import { Separator } from '../ui/separator';
 import { Checkbox } from '../ui/checkbox';
 import { Popover, PopoverTrigger, PopoverContent } from '../ui/popover';
 import { CreateDesignDialog, type VersionFormMeta } from './CreateDesignDialog';
+import { BulkEditDialog } from './BulkEditDialog';
 import { getVersionStatus } from '../../data/mockData';
 import { cn } from '../../lib/utils';
 
@@ -44,23 +45,20 @@ interface LeftSidebarProps {
   poles: Pole[];
   selectedPoleId: string | null;
   onSelectPole: (poleId: string) => void;
+  onEditPoleProperties: (poleId: string) => void;
+  onRenamePole: (poleId: string, name: string) => void;
   designSets: DesignSet[];
   activeDesignSetId: string;
   viewedDesignSetId: string;
-  /** Per-pole variants can be created (viewing the active version). */
-  canCreateVariant: boolean;
-  /** Imported/base poles in this view aren't directly editable. */
+  /** Poles in this view aren't directly editable (imported or non-active). */
   baseReadOnly: boolean;
   onSelectVersion: (id: string) => void;
   onSetActiveVersion: (id: string) => void;
   onCreateVersion: (meta: VersionFormMeta) => void;
-  onCreateVariants: (poleIds: string[], meta?: VersionFormMeta) => void;
-  onPromoteVariant: (variantId: string) => void;
-  onRenameVariant: (variantId: string, name: string) => void;
-  onDeleteVariant: (variantId: string) => void;
-  canPromoteVariant: boolean;
+  onBulkEdit: (poleIds: string[], patch: Partial<Pole>) => void;
   onRenameVersion: (id: string, name: string) => void;
   onDeleteVersion: (id: string) => void;
+  onPublishVersion: (id: string) => void;
   onRunValidation: (ruleSetId: string) => void;
   ruleSets: RuleSet[];
   lastRun?: DesignSet['runHistory'][0];
@@ -84,25 +82,23 @@ function PoleStatusIndicator({ status }: { status: PoleStatus }) {
 }
 
 // ─── Item flyout (kebab menu) ─────────────────────────────────────────────────
-type PoleAction = 'create-variant' | 'add-note' | 'save-draft' | 'edit-properties' | 'publish';
+type PoleAction = 'edit-properties' | 'rename';
 
-const POLE_MENU_ITEMS: { id: PoleAction; label: string; icon: typeof Copy }[] = [
-  { id: 'create-variant',  label: 'Create new variant', icon: Copy },
-  { id: 'add-note',        label: 'Add note',           icon: StickyNote },
-  { id: 'save-draft',      label: 'Save draft',         icon: Save },
-  { id: 'edit-properties', label: 'Edit properties',    icon: SquarePen },
-  { id: 'publish',         label: 'Publish',            icon: Upload },
+const POLE_MENU_ITEMS: { id: PoleAction; label: string; icon: typeof SquarePen }[] = [
+  { id: 'edit-properties', label: 'Edit properties', icon: SquarePen },
+  { id: 'rename',          label: 'Rename',          icon: Pencil },
 ];
 
 function ItemFlyout({ onAction, canEdit = true }: { onAction: (a: PoleAction) => void; canEdit?: boolean }) {
-  const items = canEdit ? POLE_MENU_ITEMS : POLE_MENU_ITEMS.filter(i => i.id !== 'create-variant');
   return (
     <div className="flex flex-col w-[180px]">
-      {items.map(({ id, label, icon: Icon }) => (
+      {POLE_MENU_ITEMS.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
-          onClick={() => onAction(id)}
-          className="flex items-center gap-2 min-h-8 px-2 py-1.5 rounded-md text-left hover:bg-[#f5f5f5] transition-colors"
+          onClick={e => { e.stopPropagation(); onAction(id); }}
+          disabled={!canEdit}
+          title={canEdit ? undefined : 'This version is read-only'}
+          className="flex items-center gap-2 min-h-8 px-2 py-1.5 rounded-md text-left hover:bg-[#f5f5f5] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
         >
           <Icon size={16} className="text-[#0a0a0a] shrink-0" />
           <span className="text-sm text-[#0a0a0a] whitespace-nowrap">{label}</span>
@@ -112,163 +108,122 @@ function ItemFlyout({ onAction, canEdit = true }: { onAction: (a: PoleAction) =>
   );
 }
 
-// ─── Pole list row (base pole or nested variant) ──────────────────────────────
+// ─── Pole list row ────────────────────────────────────────────────────────────
 function PoleListItem({
-  pole, selected, onClick, onAction,
-  bulkMode = false, checked = false, onToggleCheck,
-  hasVariants = false, expanded = false, onToggleExpand,
-  canEdit = true, variantPassed = false,
+  pole, selected, onClick, onEditProperties, onRename, canEdit = true,
+  checked = false, onToggleCheck,
 }: {
-  pole: Pole; selected: boolean; onClick: () => void; onAction: (a: PoleAction) => void;
-  bulkMode?: boolean; checked?: boolean; onToggleCheck?: () => void;
-  hasVariants?: boolean; expanded?: boolean; onToggleExpand?: () => void;
-  canEdit?: boolean; variantPassed?: boolean;
+  pole: Pole;
+  selected: boolean;
+  onClick: () => void;
+  onEditProperties: () => void;
+  onRename: (name: string) => void;
+  canEdit?: boolean;
+  checked?: boolean;
+  onToggleCheck?: () => void;
 }) {
   const status = getPoleStatus(pole);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(pole.poleNumber);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // While the menu is closing it returns focus to its trigger, which can blur
+  // the freshly-mounted input. Ignore blur during this brief settle window.
+  const settlingRef = useRef(false);
+
+  const startRename = () => {
+    setDraft(pole.poleNumber);
+    setRenaming(true);
+  };
+
+  // Focus + select the field when it appears, and arm the blur guard.
+  useEffect(() => {
+    if (!renaming) return;
+    settlingRef.current = true;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+    const t = window.setTimeout(() => { settlingRef.current = false; }, 300);
+    return () => window.clearTimeout(t);
+  }, [renaming]);
+
+  const commitRename = () => {
+    const next = draft.trim();
+    if (next && next !== pole.poleNumber) onRename(next);
+    setRenaming(false);
+  };
+
+  const cancelRename = () => {
+    setDraft(pole.poleNumber);
+    setRenaming(false);
+  };
+
+  const handleAction = (a: PoleAction) => {
+    setMenuOpen(false);
+    if (a === 'edit-properties') onEditProperties();
+    else if (a === 'rename') startRename();
+  };
 
   return (
     <div className="pr-2 py-0.5 bg-white flex items-center gap-2 pl-3">
-      {/* Bulk-select checkbox — outside the card */}
-      {bulkMode && (
-        <Checkbox
-          checked={checked}
-          onCheckedChange={() => onToggleCheck?.()}
-          className="shrink-0"
-        />
-      )}
+      {/* Persistent select checkbox — outside the card */}
+      <Checkbox
+        checked={checked}
+        onCheckedChange={() => onToggleCheck?.()}
+        className="shrink-0"
+      />
 
       <div
         role="button"
         tabIndex={0}
-        onClick={onClick}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+        onClick={renaming ? undefined : onClick}
+        onKeyDown={e => { if (!renaming && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick(); } }}
         className={cn(
-          'flex-1 min-w-0 flex items-center gap-1 h-8 pr-1 py-1 pl-2 rounded-[4px] text-left transition-colors group relative cursor-pointer',
+          'flex-1 min-w-0 flex items-center gap-1 h-8 pr-1 py-1 pl-2 rounded-[4px] text-left transition-colors group relative',
+          renaming ? 'cursor-default' : 'cursor-pointer',
           selected
             ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
             : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
         )}
       >
-        {/* Expand caret (poles that have variants) */}
-        {hasVariants ? (
-          <button
-            onClick={e => { e.stopPropagation(); onToggleExpand?.(); }}
-            className="shrink-0 flex items-center justify-center w-4 h-4 -ml-0.5 text-[#9ea2aa] hover:text-[#3c404d]"
-            title={expanded ? 'Collapse versions' : 'Expand versions'}
-          >
-            <ChevronDown size={14} className={cn('transition-transform', expanded ? '' : '-rotate-90')} />
-          </button>
-        ) : (
-          <span className="shrink-0 w-4" />
-        )}
-
         {/* Status indicator */}
         <PoleStatusIndicator status={status} />
 
-        {/* Pole number */}
-        <span className="font-barlow text-sm flex-1 text-left truncate text-[#3c404d]">
-          {pole.poleNumber}
-        </span>
-
-        {/* Variant count chip — green when a child version passes but base hasn't */}
-        {hasVariants && (
-          <span className={cn(
-            'shrink-0 inline-flex items-center gap-0.5 text-[10px] font-semibold rounded-full px-1.5 py-px',
-            variantPassed ? 'text-[#1fa163] bg-[#1fa163]/12' : 'text-[#5454a6] bg-[#5454a6]/10',
-          )}>
-            {variantPassed && <CircleCheck size={10} />}
-            {pole.variants!.length}
+        {/* Pole number — inline rename input when renaming */}
+        {renaming ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onClick={e => e.stopPropagation()}
+            onBlur={() => {
+              // Ignore the focus-restore blur fired while the menu is closing.
+              if (settlingRef.current) {
+                inputRef.current?.focus();
+                return;
+              }
+              commitRename();
+            }}
+            onKeyDown={e => {
+              e.stopPropagation();
+              if (e.key === 'Enter') commitRename();
+              else if (e.key === 'Escape') cancelRename();
+            }}
+            className="font-barlow text-sm flex-1 min-w-0 bg-white text-[#3c404d] border border-[rgba(255,167,14,0.8)] rounded px-1 py-0.5 outline-none focus:ring-1 focus:ring-[rgba(255,167,14,0.8)]"
+          />
+        ) : (
+          <span className="font-barlow text-sm flex-1 text-left truncate text-[#3c404d]">
+            {pole.poleNumber}
           </span>
         )}
 
         {/* Date */}
-        <span className="font-barlow text-xs text-[#9ea2aa] shrink-0 text-right whitespace-nowrap">
-          {pole.taggedDate}
-        </span>
+        {!renaming && (
+          <span className="font-barlow text-xs text-[#9ea2aa] shrink-0 text-right whitespace-nowrap">
+            {pole.taggedDate}
+          </span>
+        )}
 
         {/* Kebab */}
-        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-          <PopoverTrigger
-            onClick={e => e.stopPropagation()}
-            className={cn(
-              'shrink-0 flex items-center justify-center w-5 h-5 rounded transition-opacity cursor-pointer hover:bg-black/5',
-              selected || menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            )}
-          >
-            <MoreVertical size={18} className="text-[#3c404d]" />
-          </PopoverTrigger>
-          <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
-            <ItemFlyout
-              canEdit={canEdit}
-              onAction={a => { setMenuOpen(false); onAction(a); }}
-            />
-          </PopoverContent>
-        </Popover>
-      </div>
-    </div>
-  );
-}
-
-// ─── Pole variant row (nested under a base pole) ──────────────────────────────
-function VariantListItem({
-  variant, selected, onClick, canPromote, onMakeActive, onRename, onDelete,
-}: {
-  variant: Pole; selected: boolean; onClick: () => void; canPromote: boolean;
-  onMakeActive: () => void; onRename: (name: string) => void; onDelete: () => void;
-}) {
-  const status = getPoleStatus(variant);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(variant.variantLabel ?? '');
-
-  const commit = () => { const n = name.trim(); if (n) onRename(n); setRenaming(false); };
-  const stamp = variant.createdAt
-    ? new Date(variant.createdAt).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit' })
-    : '';
-
-  return (
-    <div className="pr-2 py-0.5 bg-white flex items-center gap-2 pl-9">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={onClick}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
-        className={cn(
-          'flex-1 min-w-0 flex items-center gap-1 h-8 pr-1 py-1 pl-1 rounded-[4px] text-left transition-colors group relative cursor-pointer',
-          selected
-            ? 'bg-[rgba(255,167,14,0.1)] border border-[rgba(255,167,14,0.5)]'
-            : 'border border-transparent hover:bg-[rgba(255,167,14,0.1)]'
-        )}
-      >
-        <CornerDownRight size={13} className="text-[#9ea2aa] shrink-0" />
-        <PoleStatusIndicator status={status} />
-
-        {renaming ? (
-          <input
-            autoFocus
-            value={name}
-            onClick={e => e.stopPropagation()}
-            onChange={e => setName(e.target.value)}
-            onBlur={commit}
-            onKeyDown={e => {
-              if (e.key === 'Enter') commit();
-              if (e.key === 'Escape') setRenaming(false);
-            }}
-            className="flex-1 min-w-0 h-6 px-1.5 text-sm rounded border border-[#363687] bg-white text-[#5454a6] outline-none"
-          />
-        ) : (
-          <span className="font-barlow text-sm flex-1 text-left truncate text-[#5454a6]">
-            {variant.variantLabel}
-          </span>
-        )}
-
-        {!renaming && stamp && (
-          <span className="font-barlow text-xs text-[#9ea2aa] shrink-0 text-right whitespace-nowrap">
-            {stamp}
-          </span>
-        )}
-
         {!renaming && (
           <Popover open={menuOpen} onOpenChange={setMenuOpen}>
             <PopoverTrigger
@@ -280,27 +235,8 @@ function VariantListItem({
             >
               <MoreVertical size={18} className="text-[#3c404d]" />
             </PopoverTrigger>
-            <PopoverContent align="start" side="right" sideOffset={4} className="w-[200px] p-1">
-              <div className="flex flex-col">
-                {canPromote && (
-                  <VersionMenuItem
-                    icon={CircleCheck}
-                    label="Make active"
-                    onClick={() => { setMenuOpen(false); onMakeActive(); }}
-                  />
-                )}
-                <VersionMenuItem
-                  icon={SquarePen}
-                  label="Rename"
-                  onClick={() => { setMenuOpen(false); setName(variant.variantLabel ?? ''); setRenaming(true); }}
-                />
-                <VersionMenuItem
-                  icon={Trash2}
-                  label="Delete"
-                  danger
-                  onClick={() => { setMenuOpen(false); onDelete(); }}
-                />
-              </div>
+            <PopoverContent align="start" side="right" sideOffset={4} className="w-auto p-1">
+              <ItemFlyout onAction={handleAction} canEdit={canEdit} />
             </PopoverContent>
           </Popover>
         )}
@@ -371,12 +307,62 @@ function HistoryBody({ runs }: { runs: DesignSet['runHistory'] }) {
   );
 }
 
+// ─── Rule / template flyout row (hover reveals Run + Make default) ────────────
+function RuleFlyoutItem({
+  name, meta, isDefault, onRun, onMakeDefault,
+}: {
+  name: string;
+  meta: string;
+  isDefault: boolean;
+  onRun: () => void;
+  onMakeDefault: () => void;
+}) {
+  return (
+    <div className="group flex items-start gap-2 px-3 py-2 hover:bg-neutral-50">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-[#2a2f3c]">{name}</p>
+        <p className="text-[11px] text-neutral-400 mt-0.5">{meta}</p>
+      </div>
+      <div className="relative flex items-center gap-1.5 shrink-0">
+        {/* Make default floats over the title on hover — no reserved space, no reflow */}
+        {!isDefault && (
+          <button
+            onClick={onMakeDefault}
+            className="absolute right-full mr-1.5 top-1/2 -translate-y-1/2 h-6 px-2.5 text-xs font-medium rounded-full border border-neutral-300 bg-white text-[#2a2f3c] shadow-sm hover:bg-neutral-100 whitespace-nowrap opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          >
+            Make default
+          </button>
+        )}
+        {isDefault && (
+          <span className="inline-flex items-center gap-1 h-6 px-2.5 text-xs font-semibold text-[#1fa163] bg-[#1fa163]/12 rounded-full">
+            <Check size={12} /> Default
+          </span>
+        )}
+        <Button
+          size="sm"
+          className="h-6 px-2.5 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white rounded-full"
+          onClick={onRun}
+        >
+          Run
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Rules & Templates section body ──────────────────────────────────────────
+const DEMO_TEMPLATES = [
+  { id: 't-1', name: 'Utility Pole Height Validation', date: '04/09/26', count: 2 },
+  { id: 't-2', name: 'Utility Pole Height Validation - v2', date: '04/10/26', count: 2 },
+];
+
 function RulesBody({
-  ruleSets, onRun, onManage,
+  ruleSets, defaultRuleId, onRun, onMakeDefault, onManage,
 }: {
   ruleSets: RuleSet[];
+  defaultRuleId: string;
   onRun: (id: string) => void;
+  onMakeDefault: (id: string, name: string) => void;
   onManage: () => void;
 }) {
   return (
@@ -390,21 +376,13 @@ function RulesBody({
       {ruleSets.map((rs, i) => (
         <div key={rs.id}>
           {i > 0 && <Separator />}
-          <div className="flex items-center gap-2 px-3 py-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-[#2a2f3c] truncate">{rs.name}</p>
-              <p className="text-[11px] text-neutral-400">
-                {rs.rules.length} rules · {rs.createdAt}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="h-6 px-2.5 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white shrink-0 rounded-full"
-              onClick={() => onRun(rs.id)}
-            >
-              Run
-            </Button>
-          </div>
+          <RuleFlyoutItem
+            name={rs.name}
+            meta={`${rs.rules.length} rules · ${rs.createdAt}`}
+            isDefault={rs.id === defaultRuleId}
+            onRun={() => onRun(rs.id)}
+            onMakeDefault={() => onMakeDefault(rs.id, rs.name)}
+          />
         </div>
       ))}
 
@@ -413,28 +391,19 @@ function RulesBody({
       {/* Templates group (static demo) */}
       <div className="px-3 pt-1 pb-1">
         <p className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">
-          Templates <span className="font-normal normal-case">1</span>
+          Templates <span className="font-normal normal-case">{DEMO_TEMPLATES.length}</span>
         </p>
       </div>
-      {[
-        { id: 't-1', name: 'Utility Pole Height Validation', date: '04/09/26', count: 2 },
-        { id: 't-2', name: 'Utility Pole Height Validation - v2', date: '04/10/26', count: 2 },
-      ].map((t, i) => (
+      {DEMO_TEMPLATES.map((t, i) => (
         <div key={t.id}>
           {i > 0 && <Separator />}
-          <div className="flex items-center gap-2 px-3 py-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-[#2a2f3c] truncate">{t.name}</p>
-              <p className="text-[11px] text-neutral-400">{t.count} rules · {t.date}</p>
-            </div>
-            <Button
-              size="sm"
-              className="h-6 px-2.5 text-xs bg-[#2a2f3c] hover:bg-[#1a1f2c] text-white shrink-0 rounded-full"
-              onClick={() => {}}
-            >
-              Run
-            </Button>
-          </div>
+          <RuleFlyoutItem
+            name={t.name}
+            meta={`${t.count} rules · ${t.date}`}
+            isDefault={t.id === defaultRuleId}
+            onRun={() => onRun(t.id)}
+            onMakeDefault={() => onMakeDefault(t.id, t.name)}
+          />
         </div>
       ))}
 
@@ -580,7 +549,7 @@ function CollapsedRail({
   onExpandToSection,
 }: {
   onExpand: () => void;
-  onExpandToSection: (section: 'create' | 'rules' | 'results' | 'history') => void;
+  onExpandToSection: (section: 'rules' | 'results' | 'history') => void;
 }) {
   const railBtn =
     'flex items-center justify-center w-full h-10 text-white hover:bg-white/10 transition-colors border-b border-[#f7f9fc]/30 shrink-0';
@@ -603,9 +572,6 @@ function CollapsedRail({
       <div className="flex-1" />
 
       {/* Section icons */}
-      <button className={railBtn} onClick={() => onExpandToSection('create')} title="Create Version">
-        <Wand2 size={20} />
-      </button>
       <button className={railBtn} onClick={() => onExpandToSection('rules')} title="Rules & Templates">
         <BookMarked size={20} />
       </button>
@@ -650,10 +616,37 @@ function buildVersionOrder(sets: DesignSet[]): TreeNode[] {
   return out;
 }
 
+// Blue "published" indicator with a fixed-position tooltip (escapes sidebar clip).
+function PublishedBadge() {
+  const [tip, setTip] = useState<{ top: number; left: number } | null>(null);
+  return (
+    <>
+      <span
+        className="shrink-0 flex items-center"
+        onMouseEnter={e => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setTip({ top: r.top - 8, left: r.left + r.width / 2 });
+        }}
+        onMouseLeave={() => setTip(null)}
+      >
+        <BadgeCheck size={15} className="text-[#1d4ed8]" />
+      </span>
+      {tip && (
+        <div
+          style={{ position: 'fixed', top: tip.top, left: tip.left, transform: 'translate(-50%, -100%)' }}
+          className="pointer-events-none z-[80] whitespace-nowrap rounded-md bg-[#2a2f3c] px-2 py-1 text-xs text-white shadow-lg"
+        >
+          Published
+        </div>
+      )}
+    </>
+  );
+}
+
 function VersionMenuItem({
   icon: Icon, label, onClick, danger = false,
 }: {
-  icon: typeof Copy; label: string; onClick: () => void; danger?: boolean;
+  icon: typeof SquarePen; label: string; onClick: () => void; danger?: boolean;
 }) {
   return (
     <button
@@ -670,7 +663,7 @@ function VersionMenuItem({
 }
 
 function VersionRowMenu({
-  set, isActive, onSetActive, onRename, onDelete, onCreateFrom,
+  set, isActive, onSetActive, onRename, onDelete, onCreateFrom, onPublish,
 }: {
   set: DesignSet;
   isActive: boolean;
@@ -678,6 +671,7 @@ function VersionRowMenu({
   onRename: () => void;
   onDelete: () => void;
   onCreateFrom: () => void;
+  onPublish: () => void;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -695,6 +689,7 @@ function VersionRowMenu({
         <div className="flex flex-col">
           {!isActive && <VersionMenuItem icon={Check} label="Set as active" onClick={() => { setOpen(false); onSetActive(); }} />}
           <VersionMenuItem icon={GitBranchPlus} label="Create version from this" onClick={() => { setOpen(false); onCreateFrom(); }} />
+          <VersionMenuItem icon={Upload} label="Publish" onClick={() => { setOpen(false); onPublish(); }} />
           {!set.isOriginal && <VersionMenuItem icon={SquarePen} label="Rename" onClick={() => { setOpen(false); onRename(); }} />}
           {!set.isOriginal && <VersionMenuItem icon={Trash2} label="Delete" danger onClick={() => { setOpen(false); onDelete(); }} />}
         </div>
@@ -704,7 +699,7 @@ function VersionRowMenu({
 }
 
 function VersionTree({
-  designSets, activeId, viewedId, onSelect, onSetActive, onRename, onDelete, onCreateFrom,
+  designSets, activeId, viewedId, onSelect, onSetActive, onRename, onDelete, onCreateFrom, onPublish,
 }: {
   designSets: DesignSet[];
   activeId: string;
@@ -714,6 +709,7 @@ function VersionTree({
   onRename: (id: string, name: string) => void;
   onDelete: (id: string) => void;
   onCreateFrom: (id: string) => void;
+  onPublish: (id: string) => void;
 }) {
   const [open, setOpen] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -785,6 +781,8 @@ function VersionTree({
                   </span>
                 )}
 
+                {set.published && !renaming && <PublishedBadge />}
+
                 {active && !renaming && (
                   <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] font-semibold text-white bg-[#1fa163] rounded-full px-1.5 py-px">
                     <Check size={10} /> Active
@@ -799,6 +797,7 @@ function VersionTree({
                     onRename={() => { setRenamingId(set.id); setRenameValue(set.name); }}
                     onDelete={() => onDelete(set.id)}
                     onCreateFrom={() => onCreateFrom(set.id)}
+                    onPublish={() => onPublish(set.id)}
                   />
                 )}
               </div>
@@ -812,11 +811,10 @@ function VersionTree({
 
 // ─── Main sidebar ─────────────────────────────────────────────────────────────
 export function LeftSidebar({
-  poles, selectedPoleId, onSelectPole,
-  designSets, activeDesignSetId, viewedDesignSetId, canCreateVariant, baseReadOnly,
-  onSelectVersion, onSetActiveVersion, onCreateVersion, onCreateVariants,
-  onPromoteVariant, onRenameVariant, onDeleteVariant, canPromoteVariant,
-  onRenameVersion, onDeleteVersion, onRunValidation,
+  poles, selectedPoleId, onSelectPole, onEditPoleProperties, onRenamePole,
+  designSets, activeDesignSetId, viewedDesignSetId, baseReadOnly,
+  onSelectVersion, onSetActiveVersion, onCreateVersion, onBulkEdit,
+  onRenameVersion, onDeleteVersion, onPublishVersion, onRunValidation,
   ruleSets, lastRun, runHistory, jobName,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed]       = useState(false);
@@ -828,19 +826,16 @@ export function LeftSidebar({
   const [historyOpen, setHistoryOpen]   = useState(false);
   const [sortBy, setSortBy]             = useState<SortOption>('last-modified');
   const [statusFilters, setStatusFilters] = useState<Set<PoleStatus>>(new Set());
-  const [bulkMode, setBulkMode]         = useState(false);
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
-  const [collapsedPoles, setCollapsedPoles] = useState<Set<string>>(new Set());
-
-  const toggleCollapse = (id: string) => {
-    setCollapsedPoles(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [defaultRule, setDefaultRule] = useState<{ id: string; name: string }>(
+    () => ruleSets[0] ? { id: ruleSets[0].id, name: ruleSets[0].name } : { id: '', name: '' }
+  );
+  const [defaultTip, setDefaultTip] = useState<{ top: number; left: number } | null>(null);
 
   const viewedSet = designSets.find(d => d.id === viewedDesignSetId) ?? designSets[0];
+  const bulkReadOnlyReason: 'original' | 'inactive' | null =
+    baseReadOnly ? (viewedDesignSetId !== activeDesignSetId ? 'inactive' : 'original') : null;
 
   // "Create version from this node" — view it first so the new version
   // branches from it, then open the dialog.
@@ -901,12 +896,13 @@ export function LeftSidebar({
     });
   };
 
-  const enterBulkMode = () => setBulkMode(true);
-  const exitBulkMode = () => { setBulkMode(false); setBulkSelected(new Set()); };
+  const handleApplyBulkEdit = (patch: Partial<Pole>) => {
+    onBulkEdit(Array.from(bulkSelected), patch);
+    setBulkSelected(new Set());
+  };
 
-  const expandToSection = (section: 'create' | 'rules' | 'results' | 'history') => {
+  const expandToSection = (section: 'rules' | 'results' | 'history') => {
     setCollapsed(false);
-    setCreateOpen(section === 'create');
     setRulesOpen(section === 'rules');
     setResultsOpen(section === 'results');
     setHistoryOpen(section === 'history');
@@ -951,6 +947,7 @@ export function LeftSidebar({
         onRename={onRenameVersion}
         onDelete={onDeleteVersion}
         onCreateFrom={handleCreateFromVersion}
+        onPublish={onPublishVersion}
       />
 
       {/* ── Viewed version label ── */}
@@ -967,50 +964,26 @@ export function LeftSidebar({
         className="flex items-center gap-2 px-3 h-12 shrink-0 border-b border-[#f7f9fc]"
         style={{ background: '#363687' }}
       >
-        {/* Left controls */}
-        {!bulkMode ? (
-          <button
-            onClick={enterBulkMode}
-            className="text-white hover:text-white/70 transition-colors shrink-0"
-            title="Bulk edit"
-          >
-            <LayoutList size={24} />
-          </button>
-        ) : (
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Select all */}
-            <Checkbox
-              checked={allFilteredSelected}
-              indeterminate={someSelected && !allFilteredSelected}
-              onCheckedChange={toggleSelectAll}
-              className="border-white data-unchecked:bg-white/10"
-              title="Select all"
-            />
-            {/* Bulk action — create a version of each selected pole (as children).
-                Never creates a new full set in the top tree. */}
-            {bulkSelected.size > 0 && canCreateVariant && (
-              <button
-                onClick={() => {
-                  onCreateVariants(Array.from(bulkSelected));
-                  exitBulkMode();
-                }}
-                className="flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full bg-white border border-[#e5e5e5] text-[#2a2f3c] text-xs font-medium hover:bg-neutral-100 transition-colors"
-                title="Create a version of each selected pole (nested under each pole)"
-              >
-                <GitBranchPlus size={13} />
-                Create version ({bulkSelected.size})
-              </button>
-            )}
-            {/* Exit bulk mode */}
+        {/* Left controls — persistent select-all + bulk edit */}
+        <div className="flex items-center gap-2 shrink-0">
+          <Checkbox
+            checked={allFilteredSelected}
+            indeterminate={someSelected && !allFilteredSelected}
+            onCheckedChange={toggleSelectAll}
+            className="border-white data-unchecked:bg-white/10"
+            title="Select all"
+          />
+          {bulkSelected.size > 0 && (
             <button
-              onClick={exitBulkMode}
-              className="text-white hover:text-white/70 transition-colors"
-              title="Exit bulk edit"
+              onClick={() => setBulkEditOpen(true)}
+              className="flex items-center gap-1 h-7 pl-2 pr-2.5 rounded-full bg-white border border-[#e5e5e5] text-[#2a2f3c] text-xs font-medium hover:bg-neutral-100 transition-colors"
+              title="Bulk edit selected poles"
             >
-              <List size={24} />
+              <SquarePen size={13} />
+              Bulk edit ({bulkSelected.size})
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Inline search field (fills the middle when active) */}
         {showSearch && (
@@ -1080,62 +1053,51 @@ export function LeftSidebar({
         </div>
       </div>
 
-      {/* ── Pole list (with nested pole versions) ── */}
+      {/* ── Pole list ── */}
       <div className="flex-1 overflow-y-auto min-h-0 bg-white">
-        {filteredPoles.map(pole => {
-          const variants = pole.variants ?? [];
-          const hasVariants = variants.length > 0;
-          const expanded = hasVariants && !collapsedPoles.has(pole.id);
-          const variantPassed =
-            getPoleStatus(pole) !== 'pass' && variants.some(v => getPoleStatus(v) === 'pass');
-          return (
-            <div key={pole.id}>
-              <PoleListItem
-                pole={pole}
-                selected={pole.id === selectedPoleId}
-                onClick={() => onSelectPole(pole.id)}
-                bulkMode={bulkMode}
-                checked={bulkSelected.has(pole.id)}
-                onToggleCheck={() => toggleBulkPole(pole.id)}
-                hasVariants={hasVariants}
-                expanded={expanded}
-                onToggleExpand={() => toggleCollapse(pole.id)}
-                canEdit={canCreateVariant}
-                variantPassed={variantPassed}
-                onAction={action => {
-                  if (action === 'create-variant') onCreateVariants([pole.id]);
-                }}
-              />
-              {expanded && variants.map(v => (
-                <VariantListItem
-                  key={v.id}
-                  variant={v}
-                  selected={v.id === selectedPoleId}
-                  onClick={() => onSelectPole(v.id)}
-                  canPromote={canPromoteVariant}
-                  onMakeActive={() => onPromoteVariant(v.id)}
-                  onRename={name => onRenameVariant(v.id, name)}
-                  onDelete={() => onDeleteVariant(v.id)}
-                />
-              ))}
-            </div>
-          );
-        })}
+        {filteredPoles.map(pole => (
+          <PoleListItem
+            key={pole.id}
+            pole={pole}
+            selected={pole.id === selectedPoleId}
+            onClick={() => onSelectPole(pole.id)}
+            onEditProperties={() => onEditPoleProperties(pole.id)}
+            onRename={name => onRenamePole(pole.id, name)}
+            canEdit={!baseReadOnly}
+            checked={bulkSelected.has(pole.id)}
+            onToggleCheck={() => toggleBulkPole(pole.id)}
+          />
+        ))}
       </div>
 
       {/* ── Bottom action buttons ── */}
       <div className="shrink-0 flex flex-col gap-1 p-2" style={{ background: '#363687' }}>
 
-        {/* Create Version — opens a centered dialog */}
+        {/* Run default rules — single click; tooltip shows the default on hover */}
         <button
-          onClick={() => setCreateOpen(true)}
-          className={actionButtonClass(createOpen)}
+          onClick={() => { if (defaultRule.id) onRunValidation(defaultRule.id); }}
+          disabled={!defaultRule.id}
+          onMouseEnter={e => {
+            const r = e.currentTarget.getBoundingClientRect();
+            setDefaultTip({ top: r.top + r.height / 2, left: r.right + 8 });
+          }}
+          onMouseLeave={() => setDefaultTip(null)}
+          className={cn(actionButtonClass(false), !defaultRule.id && 'opacity-50 cursor-not-allowed')}
         >
-          <span className="shrink-0 flex items-center"><Wand2 size={20} /></span>
-          <span className="flex-1 min-w-0 text-sm font-medium leading-5 truncate text-left">Create Version</span>
+          <span className="shrink-0 flex items-center"><Play size={18} /></span>
+          <span className="flex-1 min-w-0 text-sm font-medium leading-5 truncate text-left">Run default rules</span>
         </button>
+        {defaultTip && (
+          <div
+            style={{ position: 'fixed', top: defaultTip.top, left: defaultTip.left, transform: 'translateY(-50%)' }}
+            className="pointer-events-none z-[60] whitespace-nowrap rounded-md bg-[#2a2f3c] px-2.5 py-1.5 text-xs text-white shadow-lg"
+          >
+            <span className="text-white/60">Default: </span>
+            {defaultRule.name || 'No default rule set'}
+          </div>
+        )}
 
-        {/* Rules & Templates */}
+        {/* Rules & Templates flyout */}
         <SidebarActionButton
           icon={<BookMarked size={20} />}
           label="Rules & Templates"
@@ -1144,7 +1106,9 @@ export function LeftSidebar({
         >
           <RulesBody
             ruleSets={ruleSets}
-            onRun={id => { onRunValidation(id); }}
+            defaultRuleId={defaultRule.id}
+            onRun={id => { onRunValidation(id); setRulesOpen(false); }}
+            onMakeDefault={(id, name) => setDefaultRule({ id, name })}
             onManage={() => setRulesOpen(false)}
           />
         </SidebarActionButton>
@@ -1178,6 +1142,16 @@ export function LeftSidebar({
         onOpenChange={setCreateOpen}
         onSubmit={meta => onCreateVersion(meta)}
         sourceLabel={viewedSet?.name}
+      />
+
+      {/* Bulk edit dialog (centered) */}
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        count={bulkSelected.size}
+        readOnly={baseReadOnly}
+        readOnlyReason={bulkReadOnlyReason}
+        onApply={handleApplyBulkEdit}
       />
     </aside>
   );

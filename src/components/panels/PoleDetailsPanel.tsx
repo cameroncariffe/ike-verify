@@ -1,4 +1,4 @@
-import { useState, createContext, useContext } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
 import {
   Info, ChevronDown, Pencil, Ruler, Copy, X, CircleX, CircleAlert, Lock, GitBranchPlus,
 } from 'lucide-react';
@@ -15,12 +15,10 @@ interface PoleDetailsPanelProps {
   readOnly?: boolean;
   /** Why the panel is read-only, to tailor the guidance shown. */
   readOnlyReason?: 'original' | 'inactive' | null;
-  /** Whether a per-pole variant can be created from here. */
-  canCreateVariant?: boolean;
+  /** Bumped externally (e.g. "Edit properties") to drop the panel into edit mode. */
+  editSignal?: number;
   /** Persist an edit to the viewed version's pole. */
   onUpdatePole?: (poleId: string, patch: Partial<Pole>) => void;
-  /** Create an editable per-pole version nested under this pole. */
-  onCreateVersionFromPole?: (poleId: string) => void;
   /** Make the viewed version the active (editable) one. */
   onSetActive?: () => void;
 }
@@ -189,13 +187,17 @@ export function PoleDetailsPanel({
   onResizeStart,
   readOnly = false,
   readOnlyReason = null,
-  canCreateVariant = false,
+  editSignal = 0,
   onUpdatePole,
-  onCreateVersionFromPole,
   onSetActive,
 }: PoleDetailsPanelProps) {
   const [editMode, setEditMode] = useState(false);
   const [spansExpanded, setSpansExpanded] = useState(true);
+
+  // External request to edit (from the pole list "Edit properties" action).
+  useEffect(() => {
+    if (editSignal > 0 && !readOnly) setEditMode(true);
+  }, [editSignal, readOnly]);
   const narrow = width < NARROW_PANEL_WIDTH;
   // Read-only versions can never enter edit mode.
   const isEditing = editMode && !readOnly;
@@ -278,7 +280,7 @@ export function PoleDetailsPanel({
         </div>
 
         <span className="font-barlow font-semibold text-white text-base flex-1 truncate">
-          {pole.variantLabel ? `${pole.poleNumber} · ${pole.variantLabel}` : pole.poleNumber}
+          {pole.poleNumber}
         </span>
 
         <div className="flex items-center gap-2 shrink-0">
@@ -325,15 +327,6 @@ export function PoleDetailsPanel({
                   <p className="text-[11px] text-neutral-500 leading-snug mt-0.5">
                     Run rules to check it, then create a version to make changes.
                   </p>
-                  {canCreateVariant && onCreateVersionFromPole && pole && (
-                    <button
-                      onClick={() => onCreateVersionFromPole(pole.id)}
-                      className="mt-1.5 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md bg-[#363687] text-white text-xs font-medium hover:bg-[#2f2f78] transition-colors"
-                    >
-                      <GitBranchPlus size={13} />
-                      Create version of this pole
-                    </button>
-                  )}
                 </>
               )}
             </div>

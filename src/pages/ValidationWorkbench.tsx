@@ -1,5 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Navbar } from '../components/layout/Navbar';
+import { RuleRunDialog, ResultToast, type ResultToastData } from '../components/layout/RuleRunFeedback';
+import { PublishFlow, PublishToast, type PublishStage } from '../components/layout/PublishFlow';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
 import { MapControls } from '../components/map/MapControls';
@@ -12,15 +14,9 @@ const PANEL_DEFAULT_WIDTH = 520;
 const PANEL_MIN_WIDTH = 360;
 const PANEL_MAX_WIDTH = 1000;
 
-/** Find a pole or one of its nested variants by id. */
-function findPoleDeep(list: Pole[], id: string | null): Pole | null {
+function findPole(list: Pole[], id: string | null): Pole | null {
   if (!id) return null;
-  for (const p of list) {
-    if (p.id === id) return p;
-    const v = p.variants?.find(x => x.id === id);
-    if (v) return v;
-  }
-  return null;
+  return list.find(p => p.id === id) ?? null;
 }
 
 export interface VersionMeta {
@@ -38,8 +34,19 @@ interface ValidationWorkbenchProps {
 export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: ValidationWorkbenchProps) {
   const [selectedPoleId, setSelectedPoleId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  // Bumped whenever "Edit properties" is chosen, to drop the panel into edit mode.
+  const [editSignal, setEditSignal] = useState(0);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [imagesExpanded, setImagesExpanded] = useState(false);
+  // Mock rule-run processing flow: a 3s dialog, then a result toaster.
+  const [runningRule, setRunningRule] = useState<{ id: string; name: string } | null>(null);
+  const [resultToast, setResultToast] = useState<ResultToastData | null>(null);
+  const runTimerRef = useRef<number | null>(null);
+  // Publish flow: confirm → optional warning → 3s progress → success toaster.
+  const [publishTarget, setPublishTarget] = useState<DesignSet | null>(null);
+  const [publishStage, setPublishStage] = useState<PublishStage>(null);
+  const [publishedToast, setPublishedToast] = useState<string | null>(null);
+  const publishTimerRef = useRef<number | null>(null);
   // The version the user is *looking at*. Distinct from the active version,
   // which only changes via "Set as active".
   const [viewedDesignSetId, setViewedDesignSetId] = useState(job.activeDesignSetId);
@@ -50,27 +57,28 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
   const poles = viewedDesignSet.poles;
 
   const isActiveView = viewedDesignSet.id === job.activeDesignSetId;
-  // Base (imported) poles are only editable in the active, non-imported version.
+  // Poles are only editable in the active, non-imported version.
   const baseEditable = isActiveView && !viewedDesignSet.readOnly;
-  // Per-pole variants can be created/edited whenever viewing the active version
-  // — including from the read-only Original, which is the user's starting point.
-  const canCreateVariant = isActiveView;
 
-  const selectedPole = findPoleDeep(poles, selectedPoleId);
-  const selectedIsVariant = !!selectedPole?.variantOf;
-  const readOnly = selectedIsVariant ? !isActiveView : !baseEditable;
+  const selectedPole = findPole(poles, selectedPoleId);
+  const readOnly = !baseEditable;
   const readOnlyReason: 'original' | 'inactive' | null =
     readOnly ? (!isActiveView ? 'inactive' : 'original') : null;
 
-  // Prev/next for the image strip are based on the base pole's position.
-  const baseId = selectedPole?.variantOf ?? selectedPole?.id ?? null;
-  const baseIndex = baseId ? poles.findIndex(p => p.id === baseId) : -1;
+  const baseIndex = selectedPole ? poles.findIndex(p => p.id === selectedPole.id) : -1;
   const prevPole = baseIndex > 0 ? poles[baseIndex - 1] : null;
   const nextPole = baseIndex >= 0 && baseIndex < poles.length - 1 ? poles[baseIndex + 1] : null;
 
   const handleSelectPole = useCallback((id: string) => {
     setSelectedPoleId(id);
     setPanelOpen(true);
+  }, []);
+
+  // "Edit properties": reveal the pole in the panel and drop it into edit mode.
+  const handleEditPoleProperties = useCallback((id: string) => {
+    setSelectedPoleId(id);
+    setPanelOpen(true);
+    setEditSignal(n => n + 1);
   }, []);
 
   const handleTogglePanel = useCallback(() => {
@@ -144,96 +152,12 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
     setPanelOpen(false);
   }, [job, onJobUpdate, versionCount, viewedDesignSetId]);
 
-  // Create pole-level variants nested under the selected pole(s). These do NOT
-  // appear in the top version tree — only as children of their base pole.
-  const handleCreateVariants = useCallback((poleIds: string[], meta?: VersionMeta) => {
-    if (poleIds.length === 0 || !canCreateVariant) return;
-    let firstNewId: string | null = null;
-
-    const addVariant = (p: Pole): Pole => {
-      if (!poleIds.includes(p.id)) return p;
-      const n = (p.variants?.length ?? 0) + 1;
-      const newId = `${p.id}-v${n}-${Date.now()}`;
-      if (!firstNewId) firstNewId = newId;
-      const clone = structuredClone(p);
-      const variant: Pole = {
-        ...clone,
-        id: newId,
-        variantOf: p.id,
-        variantLabel: meta?.name?.trim() || `Version ${n}`,
-        createdAt: new Date().toISOString(),
-        variants: undefined,
-        // Adopt the parent pole's current rule outcome.
-        validationResults: clone.validationResults ?? [],
-        fieldIssues: clone.fieldIssues ?? {},
-      };
-      return { ...p, variants: [...(p.variants ?? []), variant] };
-    };
-
-    onJobUpdate({
-      ...job,
-      designSets: job.designSets.map(d =>
-        d.id === viewedDesignSet.id ? { ...d, poles: d.poles.map(addVariant) } : d
-      ),
-    });
-    if (firstNewId) {
-      setSelectedPoleId(firstNewId);
-      setPanelOpen(true);
-    }
-  }, [job, onJobUpdate, viewedDesignSet.id, canCreateVariant]);
-
-  // Promote a pole variant to be the base pole (its "active" version). Its design
-  // replaces the base; remaining variants stay as alternatives. Requires an
-  // editable set, since it overwrites the base pole.
-  const handlePromoteVariant = useCallback((variantId: string) => {
-    if (!baseEditable) return;
-    const base = viewedDesignSet.poles.find(p => p.variants?.some(v => v.id === variantId));
-    onJobUpdate({
-      ...job,
-      designSets: job.designSets.map(d => {
-        if (d.id !== viewedDesignSet.id) return d;
-        return {
-          ...d,
-          poles: d.poles.map(p => {
-            const variant = p.variants?.find(v => v.id === variantId);
-            if (!variant) return p;
-            const others = p.variants!.filter(v => v.id !== variantId);
-            // The version being replaced is preserved as a child of the new
-            // active pole. Keep it labeled "Original" (deduped) so its history
-            // (and prior rule outcome) isn't lost.
-            const siblingLabels = new Set(others.map(v => v.variantLabel));
-            let demotedLabel = 'Original';
-            if (siblingLabels.has(demotedLabel)) {
-              let i = 2;
-              while (siblingLabels.has(`Original (${i})`)) i++;
-              demotedLabel = `Original (${i})`;
-            }
-            const demoted: Pole = {
-              ...p,
-              id: `${p.id}-prev-${Date.now()}`,
-              variantOf: p.id,
-              variantLabel: demotedLabel,
-              createdAt: p.createdAt ?? new Date().toISOString(),
-              variants: undefined,
-            };
-            return {
-              ...variant,
-              id: p.id,
-              poleNumber: p.poleNumber,
-              taggedDate: p.taggedDate,
-              variantOf: undefined,
-              variantLabel: undefined,
-              createdAt: undefined,
-              variants: [...others, demoted],
-            };
-          }),
-        };
-      }),
-    });
-    if (base) setSelectedPoleId(base.id);
-  }, [job, onJobUpdate, viewedDesignSet.id, viewedDesignSet.poles, baseEditable]);
-
-  const handleRenameVariant = useCallback((variantId: string, name: string) => {
+  // Apply the same field changes to many poles at once (Bulk edit). Only the
+  // editable, active version can be changed. Clears prior rule results so the
+  // edited poles must be re-run.
+  const handleBulkEdit = useCallback((poleIds: string[], patch: Partial<Pole>) => {
+    if (poleIds.length === 0 || !baseEditable) return;
+    const ids = new Set(poleIds);
     onJobUpdate({
       ...job,
       designSets: job.designSets.map(d => {
@@ -241,35 +165,14 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
         return {
           ...d,
           poles: d.poles.map(p =>
-            p.variants?.some(v => v.id === variantId)
-              ? { ...p, variants: p.variants.map(v => v.id === variantId ? { ...v, variantLabel: name } : v) }
+            ids.has(p.id)
+              ? { ...p, ...patch, validationResults: [], fieldIssues: {} }
               : p
           ),
         };
       }),
     });
-  }, [job, onJobUpdate, viewedDesignSet.id]);
-
-  const handleDeleteVariant = useCallback((variantId: string) => {
-    onJobUpdate({
-      ...job,
-      designSets: job.designSets.map(d => {
-        if (d.id !== viewedDesignSet.id) return d;
-        return {
-          ...d,
-          poles: d.poles.map(p =>
-            p.variants?.some(v => v.id === variantId)
-              ? { ...p, variants: p.variants.filter(v => v.id !== variantId) }
-              : p
-          ),
-        };
-      }),
-    });
-    if (selectedPoleId === variantId) {
-      setSelectedPoleId(null);
-      setPanelOpen(false);
-    }
-  }, [job, onJobUpdate, viewedDesignSet.id, selectedPoleId]);
+  }, [job, onJobUpdate, viewedDesignSet.id, baseEditable]);
 
   const handleRenameVersion = useCallback((id: string, name: string) => {
     onJobUpdate({
@@ -297,46 +200,121 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
 
   // ── Editing (persists to the viewed version; only when editable) ────────────
   const handleUpdatePole = useCallback((poleId: string, patch: Partial<Pole>) => {
-    const target = findPoleDeep(viewedDesignSet.poles, poleId);
-    if (!target) return;
-    // Variants are editable in the active version; base poles need an editable set.
-    const targetEditable = target.variantOf ? isActiveView : baseEditable;
-    if (!targetEditable) return;
-
-    const editPole = (p: Pole): Pole => ({ ...p, ...patch, validationResults: [], fieldIssues: {} });
-
+    if (!baseEditable) return;
     onJobUpdate({
       ...job,
       designSets: job.designSets.map(d => {
         if (d.id !== viewedDesignSet.id) return d;
         return {
           ...d,
-          poles: d.poles.map(p => {
-            if (p.id === poleId) return editPole(p);
-            if (p.variants?.some(v => v.id === poleId)) {
-              return { ...p, variants: p.variants.map(v => v.id === poleId ? editPole(v) : v) };
-            }
-            return p;
-          }),
+          poles: d.poles.map(p =>
+            p.id === poleId
+              ? { ...p, ...patch, validationResults: [], fieldIssues: {} }
+              : p
+          ),
         };
       }),
     });
-  }, [job, onJobUpdate, viewedDesignSet.id, viewedDesignSet.poles, isActiveView, baseEditable]);
+  }, [job, onJobUpdate, viewedDesignSet.id, baseEditable]);
+
+  // Renaming only changes the pole's label — it doesn't invalidate rule results.
+  const handleRenamePole = useCallback((poleId: string, name: string) => {
+    if (!baseEditable) return;
+    onJobUpdate({
+      ...job,
+      designSets: job.designSets.map(d => {
+        if (d.id !== viewedDesignSet.id) return d;
+        return {
+          ...d,
+          poles: d.poles.map(p => (p.id === poleId ? { ...p, poleNumber: name } : p)),
+        };
+      }),
+    });
+  }, [job, onJobUpdate, viewedDesignSet.id, baseEditable]);
 
   // ── Rule checks (run against the version being viewed) ──────────────────────
+  // Kick off the mock 3s processing flow; the actual run happens when it finishes.
   const handleRunValidation = useCallback((ruleSetId: string) => {
     const ruleSet = mockRuleSets.find(r => r.id === ruleSetId);
     if (!ruleSet) return;
-    const { poles: ranPoles, run } = runRulesOnPoles(viewedDesignSet.poles, ruleSet);
-    onJobUpdate({
-      ...job,
-      designSets: job.designSets.map(d =>
-        d.id === viewedDesignSet.id
-          ? { ...d, poles: ranPoles, runHistory: [run, ...d.runHistory] }
-          : d
-      ),
-    });
+    if (runTimerRef.current) window.clearTimeout(runTimerRef.current);
+    setResultToast(null);
+    setRunningRule({ id: ruleSet.id, name: ruleSet.name });
+
+    runTimerRef.current = window.setTimeout(() => {
+      const { poles: ranPoles, run } = runRulesOnPoles(viewedDesignSet.poles, ruleSet);
+      onJobUpdate({
+        ...job,
+        designSets: job.designSets.map(d =>
+          d.id === viewedDesignSet.id
+            ? { ...d, poles: ranPoles, runHistory: [run, ...d.runHistory] }
+            : d
+        ),
+      });
+      const s = run.summary;
+      const status: ResultToastData['status'] =
+        s.fail > 0 ? 'fail' : (s.warning > 0 || s.review > 0) ? 'warning' : 'pass';
+      setResultToast({ ruleSetName: ruleSet.name, summary: s, status });
+      setRunningRule(null);
+      runTimerRef.current = null;
+    }, 3000);
   }, [job, onJobUpdate, viewedDesignSet.id, viewedDesignSet.poles]);
+
+  const handleStopRun = useCallback(() => {
+    if (runTimerRef.current) window.clearTimeout(runTimerRef.current);
+    runTimerRef.current = null;
+    setRunningRule(null);
+  }, []);
+
+  // ── Publish flow ────────────────────────────────────────────────────────────
+  const publishFailCount = publishTarget?.runHistory[0]?.summary.fail ?? 0;
+
+  const handlePublishVersion = useCallback((id: string) => {
+    const set = job.designSets.find(d => d.id === id);
+    if (!set) return;
+    setPublishTarget(set);
+    setPublishStage('confirm');
+  }, [job.designSets]);
+
+  const cancelPublish = useCallback(() => {
+    if (publishTimerRef.current) window.clearTimeout(publishTimerRef.current);
+    publishTimerRef.current = null;
+    setPublishStage(null);
+    setPublishTarget(null);
+  }, []);
+
+  const startPublishProgress = useCallback(() => {
+    const target = publishTarget;
+    if (!target) return;
+    setPublishStage('progress');
+    publishTimerRef.current = window.setTimeout(() => {
+      onJobUpdate({
+        ...job,
+        designSets: job.designSets.map(d =>
+          d.id === target.id ? { ...d, published: true } : d
+        ),
+      });
+      setPublishStage(null);
+      setPublishTarget(null);
+      setPublishedToast(target.name);
+      publishTimerRef.current = null;
+    }, 3000);
+  }, [publishTarget, job, onJobUpdate]);
+
+  // Primary action in the publish dialog: confirm → warn (if failures) → progress.
+  const confirmPublish = useCallback(() => {
+    if (publishStage === 'confirm' && publishFailCount > 0) {
+      setPublishStage('warn');
+      return;
+    }
+    startPublishProgress();
+  }, [publishStage, publishFailCount, startPublishProgress]);
+
+  // Clear any pending timers on unmount.
+  useEffect(() => () => {
+    if (runTimerRef.current) window.clearTimeout(runTimerRef.current);
+    if (publishTimerRef.current) window.clearTimeout(publishTimerRef.current);
+  }, []);
 
   const lastRun = viewedDesignSet.runHistory[0];
 
@@ -350,21 +328,19 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
             poles={poles}
             selectedPoleId={selectedPoleId}
             onSelectPole={handleSelectPole}
+            onEditPoleProperties={handleEditPoleProperties}
+            onRenamePole={handleRenamePole}
             designSets={job.designSets}
             activeDesignSetId={job.activeDesignSetId}
             viewedDesignSetId={viewedDesignSet.id}
-            canCreateVariant={canCreateVariant}
             baseReadOnly={!baseEditable}
             onSelectVersion={handleViewVersion}
             onSetActiveVersion={handleSetActiveVersion}
             onCreateVersion={handleCreateVersion}
-            onCreateVariants={handleCreateVariants}
-            onPromoteVariant={handlePromoteVariant}
-            onRenameVariant={handleRenameVariant}
-            onDeleteVariant={handleDeleteVariant}
-            canPromoteVariant={baseEditable}
+            onBulkEdit={handleBulkEdit}
             onRenameVersion={handleRenameVersion}
             onDeleteVersion={handleDeleteVersion}
+            onPublishVersion={handlePublishVersion}
             onRunValidation={handleRunValidation}
             ruleSets={mockRuleSets}
             lastRun={lastRun}
@@ -397,13 +373,29 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
             onResizeStart={handleResizeStart}
             readOnly={readOnly}
             readOnlyReason={readOnlyReason}
-            canCreateVariant={canCreateVariant}
+            editSignal={editSignal}
             onUpdatePole={handleUpdatePole}
-            onCreateVersionFromPole={poleId => handleCreateVariants([poleId])}
             onSetActive={() => handleSetActiveVersion(viewedDesignSet.id)}
           />
         )}
       </div>
+
+      <RuleRunDialog
+        open={!!runningRule}
+        ruleSetName={runningRule?.name ?? ''}
+        poleCount={viewedDesignSet.poles.length}
+        onStop={handleStopRun}
+      />
+      <ResultToast toast={resultToast} onClose={() => setResultToast(null)} />
+
+      <PublishFlow
+        stage={publishStage}
+        versionName={publishTarget?.name ?? ''}
+        failCount={publishFailCount}
+        onCancel={cancelPublish}
+        onConfirm={confirmPublish}
+      />
+      <PublishToast versionName={publishedToast} onClose={() => setPublishedToast(null)} />
     </div>
   );
 }

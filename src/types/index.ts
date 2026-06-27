@@ -34,14 +34,6 @@ export interface Pole {
   spanGuys?: SpanGuyDetail[];
   fieldIssues?: Record<string, FieldIssue>;
   validationResults?: PoleValidationResult[];
-  /** Pole-level versions, nested under this pole in the list. */
-  variants?: Pole[];
-  /** For a variant: the id of the base pole it was created from. */
-  variantOf?: string;
-  /** Display label for a variant, e.g. "Version 1". */
-  variantLabel?: string;
-  /** ISO timestamp for when a variant was created. */
-  createdAt?: string;
 }
 
 export interface MakeReadyItem {
@@ -136,6 +128,8 @@ export interface DesignSet {
   scope?: 'full' | 'partial';
   /** For partial versions: the pole ids this version owns/focuses on. */
   poleIds?: string[];
+  /** True once this version has been published to IKE Office Pro. */
+  published?: boolean;
   createdAt: string;
   poles: Pole[];
   runHistory: ValidationRun[];
