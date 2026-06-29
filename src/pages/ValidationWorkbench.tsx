@@ -7,7 +7,7 @@ import { MapView } from '../components/map/MapView';
 import { MapControls } from '../components/map/MapControls';
 import { PoleImages } from '../components/map/PoleImages';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
-import type { Job, DesignSet, Pole } from '../types';
+import type { Job, DesignSet, Pole, PublishEvent } from '../types';
 import { mockRuleSets, runRulesOnPoles } from '../data/mockData';
 
 const PANEL_DEFAULT_WIDTH = 520;
@@ -288,10 +288,20 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
     if (!target) return;
     setPublishStage('progress');
     publishTimerRef.current = window.setTimeout(() => {
+      const latestRun = target.runHistory[0];
+      const publishEvent: PublishEvent = {
+        id: `pub-${Date.now()}`,
+        publishedAt: new Date().toISOString(),
+        ruleSetName: latestRun?.ruleSetName,
+        summary: latestRun?.summary,
+        hadFailures: (latestRun?.summary.fail ?? 0) > 0,
+      };
       onJobUpdate({
         ...job,
         designSets: job.designSets.map(d =>
-          d.id === target.id ? { ...d, published: true } : d
+          d.id === target.id
+            ? { ...d, published: true, publishHistory: [publishEvent, ...(d.publishHistory ?? [])] }
+            : d
         ),
       });
       setPublishStage(null);
@@ -315,8 +325,6 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
     if (runTimerRef.current) window.clearTimeout(runTimerRef.current);
     if (publishTimerRef.current) window.clearTimeout(publishTimerRef.current);
   }, []);
-
-  const lastRun = viewedDesignSet.runHistory[0];
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#f7f9fc]">
@@ -343,8 +351,8 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
             onPublishVersion={handlePublishVersion}
             onRunValidation={handleRunValidation}
             ruleSets={mockRuleSets}
-            lastRun={lastRun}
             runHistory={viewedDesignSet.runHistory}
+            publishHistory={viewedDesignSet.publishHistory ?? []}
             jobName={job.name}
           />
         )}

@@ -2,13 +2,16 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Search, ArrowUpDown, ListFilter, X,
   ArrowLeftFromLine, ArrowRightFromLine,
-  BookMarked, CheckCircle, History, Play,
+  BookMarked, History, Play,
   MoreVertical, UtilityPole,
   Circle, CircleCheck, CircleX, CircleAlert,
   SquarePen, Pencil, Upload,
-  ChevronDown, Lock, GitBranchPlus, Trash2, FolderGit2, Check, BadgeCheck,
+  ChevronDown, ChevronRight, Lock, GitBranchPlus, Trash2, FolderGit2, Check, BadgeCheck,
 } from 'lucide-react';
-import type { Pole, DesignSet, RuleSet, ValidationStatus, VersionStatus } from '../../types';
+import type {
+  Pole, DesignSet, RuleSet, ValidationStatus, VersionStatus,
+  ValidationRun, PublishEvent,
+} from '../../types';
 import { ValidationBadge } from '../ui/ValidationBadge';
 import { Button } from '../ui/button';
 import { Separator } from '../ui/separator';
@@ -61,8 +64,8 @@ interface LeftSidebarProps {
   onPublishVersion: (id: string) => void;
   onRunValidation: (ruleSetId: string) => void;
   ruleSets: RuleSet[];
-  lastRun?: DesignSet['runHistory'][0];
-  runHistory?: DesignSet['runHistory'];
+  runHistory?: ValidationRun[];
+  publishHistory?: PublishEvent[];
   jobName: string;
 }
 
@@ -285,23 +288,110 @@ function SidebarActionButton({
   );
 }
 
-// ─── History flyout body ──────────────────────────────────────────────────────
-function HistoryBody({ runs }: { runs: DesignSet['runHistory'] }) {
+// ─── History flyout: unified log of rule runs + publishes ─────────────────────
+
+// A rule-run entry. Collapsed by default; expands to show the run's results.
+function RunHistoryItem({ run }: { run: ValidationRun }) {
+  const [expanded, setExpanded] = useState(false);
+  const s = run.summary;
   return (
-    <div className="bg-white px-3 py-3 space-y-2">
-      <p className="text-sm font-semibold text-[#2a2f3c]">History</p>
-      {runs.length === 0 ? (
-        <p className="text-[11px] text-neutral-400">No validation runs yet.</p>
-      ) : (
-        runs.map(run => (
-          <div key={run.id} className="flex items-center gap-2 py-1 border-b border-neutral-100 last:border-0">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-[#2a2f3c] truncate">{run.ruleSetName}</p>
-              <p className="text-[11px] text-neutral-400">{new Date(run.runAt).toLocaleString()}</p>
-            </div>
-            <span className="text-xs text-neutral-500 shrink-0">{run.summary.total} poles</span>
+    <div className="border-b border-neutral-100 last:border-0">
+      <button
+        onClick={() => setExpanded(o => !o)}
+        className="w-full flex items-center gap-2 py-2 px-1 -mx-1 rounded text-left hover:bg-neutral-50 transition-colors"
+      >
+        <ChevronRight
+          size={14}
+          className={cn('shrink-0 text-neutral-400 transition-transform', expanded && 'rotate-90')}
+        />
+        <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-[#363687]/10 text-[#363687]">
+          <Play size={13} />
+        </span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-[#2a2f3c] truncate">Ran {run.ruleSetName}</p>
+          <p className="text-[11px] text-neutral-400">{new Date(run.runAt).toLocaleString()}</p>
+        </div>
+        <span className="text-xs text-neutral-500 shrink-0">{s.total} poles</span>
+      </button>
+
+      {expanded && (
+        <div className="pb-3 pl-9 pr-1 space-y-3">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <ValidationBadge status="pass"    count={s.pass}    size="md" />
+            <ValidationBadge status="warning" count={s.warning} size="md" />
+            <ValidationBadge status="review"  count={s.review}  size="md" />
+            <ValidationBadge status="fail"    count={s.fail}    size="md" />
           </div>
-        ))
+          <Separator />
+          <p className="text-xs font-semibold text-neutral-700">Rule Breakdown</p>
+          {[
+            { label: 'Comm to LCE Clearance', pass: s.pass, total: s.total },
+            { label: 'Ground Clearance',       pass: Math.round(s.pass * 0.9), total: s.total },
+          ].map(item => (
+            <div key={item.label} className="flex items-center gap-2">
+              <span className="text-sm text-[#2a2f3c] flex-1 truncate">{item.label}</span>
+              <span className="text-xs text-neutral-500 shrink-0">{item.pass} / {item.total}</span>
+              <Button variant="outline" size="sm" className="h-6 px-2.5 text-xs shrink-0">
+                View
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// A publish entry — a simple log line.
+function PublishHistoryItem({ event }: { event: PublishEvent }) {
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-neutral-100 last:border-0">
+      <span className="shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-[#1d4ed8]/10 text-[#1d4ed8] ml-[22px]">
+        <Upload size={13} />
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-[#2a2f3c] truncate">Published to IKE Office Pro</p>
+        <p className="text-[11px] text-neutral-400">{new Date(event.publishedAt).toLocaleString()}</p>
+      </div>
+      {event.hadFailures && (
+        <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium text-[#dc2626]">
+          <CircleAlert size={12} /> with failures
+        </span>
+      )}
+    </div>
+  );
+}
+
+type HistoryEntry =
+  | { kind: 'run'; at: number; run: ValidationRun }
+  | { kind: 'publish'; at: number; event: PublishEvent };
+
+function HistoryBody({
+  runs, publishes,
+}: {
+  runs: ValidationRun[];
+  publishes: PublishEvent[];
+}) {
+  const entries: HistoryEntry[] = [
+    ...runs.map(r => ({ kind: 'run' as const, at: new Date(r.runAt).getTime(), run: r })),
+    ...publishes.map(p => ({ kind: 'publish' as const, at: new Date(p.publishedAt).getTime(), event: p })),
+  ].sort((a, b) => b.at - a.at);
+
+  return (
+    <div className="bg-white px-3 py-3">
+      <p className="text-sm font-semibold text-[#2a2f3c] pb-1">History</p>
+      {entries.length === 0 ? (
+        <p className="text-[11px] text-neutral-400">
+          No activity yet — run rules or publish a version to see it logged here.
+        </p>
+      ) : (
+        <div>
+          {entries.map(e =>
+            e.kind === 'run'
+              ? <RunHistoryItem key={e.run.id} run={e.run} />
+              : <PublishHistoryItem key={e.event.id} event={e.event} />
+          )}
+        </div>
       )}
     </div>
   );
@@ -421,40 +511,6 @@ function RulesBody({
   );
 }
 
-// ─── Results section body ─────────────────────────────────────────────────────
-function ResultsBody({ lastRun }: { lastRun: DesignSet['runHistory'][0] }) {
-  return (
-    <div className="bg-white border-b border-neutral-100 px-3 py-3 space-y-3">
-      <div>
-        <p className="text-sm font-semibold text-[#2a2f3c]">Validation Results</p>
-        <p className="text-[11px] text-neutral-400 mt-0.5">
-          RuleSet: {lastRun.ruleSetName} | {new Date(lastRun.runAt).toLocaleDateString()}
-        </p>
-      </div>
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <ValidationBadge status="pass"    count={lastRun.summary.pass}    size="md" />
-        <ValidationBadge status="warning" count={lastRun.summary.warning} size="md" />
-        <ValidationBadge status="review"  count={lastRun.summary.review}  size="md" />
-        <ValidationBadge status="fail"    count={lastRun.summary.fail}    size="md" />
-      </div>
-      <Separator />
-      <p className="text-xs font-semibold text-neutral-700">Rule Breakdown</p>
-      {[
-        { label: 'Comm to LCE Clearance', pass: lastRun.summary.pass, total: lastRun.summary.total },
-        { label: 'Ground Clearance',       pass: Math.round(lastRun.summary.pass * 0.9), total: lastRun.summary.total },
-      ].map(item => (
-        <div key={item.label} className="flex items-center gap-2">
-          <span className="text-sm text-[#2a2f3c] flex-1 truncate">{item.label}</span>
-          <span className="text-xs text-neutral-500 shrink-0">{item.pass} / {item.total}</span>
-          <Button variant="outline" size="sm" className="h-6 px-2.5 text-xs shrink-0">
-            View
-          </Button>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ─── Sort flyout ──────────────────────────────────────────────────────────────
 function SortFlyout({
   value, onChange,
@@ -549,7 +605,7 @@ function CollapsedRail({
   onExpandToSection,
 }: {
   onExpand: () => void;
-  onExpandToSection: (section: 'rules' | 'results' | 'history') => void;
+  onExpandToSection: (section: 'rules' | 'history') => void;
 }) {
   const railBtn =
     'flex items-center justify-center w-full h-10 text-white hover:bg-white/10 transition-colors border-b border-[#f7f9fc]/30 shrink-0';
@@ -574,9 +630,6 @@ function CollapsedRail({
       {/* Section icons */}
       <button className={railBtn} onClick={() => onExpandToSection('rules')} title="Rules & Templates">
         <BookMarked size={20} />
-      </button>
-      <button className={railBtn} onClick={() => onExpandToSection('results')} title="Results">
-        <CheckCircle size={20} />
       </button>
       <button
         className={cn(railBtn, 'border-b-0')}
@@ -815,14 +868,13 @@ export function LeftSidebar({
   designSets, activeDesignSetId, viewedDesignSetId, baseReadOnly,
   onSelectVersion, onSetActiveVersion, onCreateVersion, onBulkEdit,
   onRenameVersion, onDeleteVersion, onPublishVersion, onRunValidation,
-  ruleSets, lastRun, runHistory, jobName,
+  ruleSets, runHistory, publishHistory, jobName,
 }: LeftSidebarProps) {
   const [collapsed, setCollapsed]       = useState(false);
   const [search, setSearch]             = useState('');
   const [showSearch, setShowSearch]     = useState(false);
   const [createOpen, setCreateOpen]     = useState(false);
   const [rulesOpen, setRulesOpen]       = useState(false);
-  const [resultsOpen, setResultsOpen]   = useState(false);
   const [historyOpen, setHistoryOpen]   = useState(false);
   const [sortBy, setSortBy]             = useState<SortOption>('last-modified');
   const [statusFilters, setStatusFilters] = useState<Set<PoleStatus>>(new Set());
@@ -901,10 +953,9 @@ export function LeftSidebar({
     setBulkSelected(new Set());
   };
 
-  const expandToSection = (section: 'rules' | 'results' | 'history') => {
+  const expandToSection = (section: 'rules' | 'history') => {
     setCollapsed(false);
     setRulesOpen(section === 'rules');
-    setResultsOpen(section === 'results');
     setHistoryOpen(section === 'history');
   };
 
@@ -1113,26 +1164,14 @@ export function LeftSidebar({
           />
         </SidebarActionButton>
 
-        {/* Results */}
-        <SidebarActionButton
-          icon={<CheckCircle size={20} />}
-          label="Results"
-          open={resultsOpen}
-          onOpenChange={setResultsOpen}
-        >
-          {lastRun
-            ? <ResultsBody lastRun={lastRun} />
-            : <div className="bg-white px-3 py-3"><p className="text-[11px] text-neutral-400">No results yet — run a rule set to see validation results.</p></div>}
-        </SidebarActionButton>
-
-        {/* History */}
+        {/* History — unified log of rule runs and publishes */}
         <SidebarActionButton
           icon={<History size={20} />}
           label="History"
           open={historyOpen}
           onOpenChange={setHistoryOpen}
         >
-          <HistoryBody runs={runHistory ?? (lastRun ? [lastRun] : [])} />
+          <HistoryBody runs={runHistory ?? []} publishes={publishHistory ?? []} />
         </SidebarActionButton>
       </div>
 

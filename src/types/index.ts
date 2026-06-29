@@ -133,6 +133,16 @@ export interface DesignSet {
   createdAt: string;
   poles: Pole[];
   runHistory: ValidationRun[];
+  /** Log of times this version was published to IKE Office Pro. */
+  publishHistory?: PublishEvent[];
+}
+
+export interface ValidationSummary {
+  total: number;
+  pass: number;
+  fail: number;
+  warning: number;
+  review: number;
 }
 
 export interface ValidationRun {
@@ -140,13 +150,18 @@ export interface ValidationRun {
   ruleSetId: string;
   ruleSetName: string;
   runAt: string;
-  summary: {
-    total: number;
-    pass: number;
-    fail: number;
-    warning: number;
-    review: number;
-  };
+  summary: ValidationSummary;
+}
+
+export interface PublishEvent {
+  id: string;
+  publishedAt: string;
+  /** Rule set context from the last run at publish time, if any. */
+  ruleSetName?: string;
+  /** Snapshot of the validation summary when published. */
+  summary?: ValidationSummary;
+  /** True if published with outstanding rule failures. */
+  hadFailures: boolean;
 }
 
 export interface Job {
