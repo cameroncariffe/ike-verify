@@ -4,6 +4,7 @@ import { RuleRunDialog, ResultToast, type ResultToastData } from '../components/
 import { PublishFlow, PublishToast, type PublishStage } from '../components/layout/PublishFlow';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
+import { MapMarkers } from '../components/map/MapMarkers';
 import { MapControls } from '../components/map/MapControls';
 import { PoleImages } from '../components/map/PoleImages';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
@@ -359,6 +360,13 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
 
         <main className="flex flex-1 min-w-0 overflow-hidden relative">
           <MapView />
+          {!imagesExpanded && (
+            <MapMarkers
+              poles={poles}
+              selectedPoleId={selectedPoleId}
+              onSelectPole={handleSelectPole}
+            />
+          )}
           {!imagesExpanded && (
             <MapControls panelOpen={panelOpen} onTogglePanel={handleTogglePanel} />
           )}
