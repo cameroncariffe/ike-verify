@@ -15,9 +15,18 @@ interface MapStageProps {
   poles: Pole[];
   selectedPoleId: string | null;
   onSelectPole: (id: string) => void;
+  /** When false, drag-pan and wheel-zoom are disabled (non-hand tools). */
+  interactive?: boolean;
+  /** When true, marker clicks build the multi-select set (pointer select tool). */
+  selectionEnabled?: boolean;
+  selectedIds?: Set<string>;
+  onMultiSelect?: (next: Set<string>) => void;
 }
 
-export function MapStage({ poles, selectedPoleId, onSelectPole }: MapStageProps) {
+export function MapStage({
+  poles, selectedPoleId, onSelectPole, interactive = true,
+  selectionEnabled = false, selectedIds, onMultiSelect,
+}: MapStageProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [zoom, setZoom] = useState(1);
@@ -53,7 +62,7 @@ export function MapStage({ poles, selectedPoleId, onSelectPole }: MapStageProps)
   }, [displayScale, clampPan]);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    if (!interactive || e.button !== 0) return;
     dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
     setDragging(true);
   };
@@ -77,7 +86,7 @@ export function MapStage({ poles, selectedPoleId, onSelectPole }: MapStageProps)
   // Scroll-wheel zoom, anchored to the cursor position.
   useEffect(() => {
     const el = rootRef.current;
-    if (!el) return;
+    if (!el || !interactive) return;
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -109,13 +118,16 @@ export function MapStage({ poles, selectedPoleId, onSelectPole }: MapStageProps)
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [size, clampPan]);
+  }, [size, clampPan, interactive]);
 
   return (
     <div
       ref={rootRef}
       onMouseDown={onMouseDown}
-      className={cn('absolute inset-0 overflow-hidden', dragging ? 'cursor-grabbing' : 'cursor-grab')}
+      className={cn(
+        'absolute inset-0 overflow-hidden',
+        interactive ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default',
+      )}
     >
       {/* Pan layer */}
       <div className="absolute inset-0" style={{ transform: `translate(${pan.x}px, ${pan.y}px)` }}>
@@ -130,6 +142,9 @@ export function MapStage({ poles, selectedPoleId, onSelectPole }: MapStageProps)
             selectedPoleId={selectedPoleId}
             onSelectPole={onSelectPole}
             markerScale={1 / displayScale}
+            selectionEnabled={selectionEnabled}
+            selectedIds={selectedIds}
+            onMultiSelect={onMultiSelect}
           />
         </div>
       </div>

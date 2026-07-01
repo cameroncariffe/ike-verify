@@ -164,6 +164,17 @@ export interface PublishEvent {
   hadFailures: boolean;
 }
 
+/** A named route (ordered strand of poles) defined on the map. */
+export interface MapRoute {
+  id: string;
+  name: string;
+  /** Pole ids ordered from the start endpoint to the end. */
+  poleIds: string[];
+  /** The pole id chosen as the route's start. */
+  startPoleId: string;
+  createdAt: string;
+}
+
 export interface Job {
   id: string;
   name: string;
@@ -172,4 +183,6 @@ export interface Job {
   account: string;
   designSets: DesignSet[];
   activeDesignSetId: string;
+  /** Named routes (ordered pole strands) created on the map for this job. */
+  routes?: MapRoute[];
 }

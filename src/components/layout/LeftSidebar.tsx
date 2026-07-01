@@ -60,6 +60,9 @@ interface LeftSidebarProps {
   onSetActiveVersion: (id: string) => void;
   onCreateVersion: (meta: VersionFormMeta) => void;
   onBulkEdit: (poleIds: string[], patch: Partial<Pole>) => void;
+  /** Multi-selected pole ids (shared with the map's pointer-select tool). */
+  bulkSelected: Set<string>;
+  onBulkSelectedChange: (next: Set<string>) => void;
   onRenameVersion: (id: string, name: string) => void;
   onDeleteVersion: (id: string) => void;
   onPublishVersion: (id: string) => void;
@@ -868,6 +871,7 @@ export function LeftSidebar({
   poles, selectedPoleId, onSelectPole, onDeselectPole, onEditPoleProperties, onRenamePole,
   designSets, activeDesignSetId, viewedDesignSetId, baseReadOnly,
   onSelectVersion, onSetActiveVersion, onCreateVersion, onBulkEdit,
+  bulkSelected, onBulkSelectedChange,
   onRenameVersion, onDeleteVersion, onPublishVersion, onRunValidation,
   ruleSets, runHistory, publishHistory, jobName,
 }: LeftSidebarProps) {
@@ -879,7 +883,6 @@ export function LeftSidebar({
   const [historyOpen, setHistoryOpen]   = useState(false);
   const [sortBy, setSortBy]             = useState<SortOption>('last-modified');
   const [statusFilters, setStatusFilters] = useState<Set<PoleStatus>>(new Set());
-  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [defaultRule, setDefaultRule] = useState<{ id: string; name: string }>(
     () => ruleSets[0] ? { id: ruleSets[0].id, name: ruleSets[0].name } : { id: '', name: '' }
@@ -933,25 +936,22 @@ export function LeftSidebar({
   const someSelected = filteredPoles.some(p => bulkSelected.has(p.id));
 
   const toggleBulkPole = (id: string) => {
-    setBulkSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    const next = new Set(bulkSelected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    onBulkSelectedChange(next);
   };
 
   const toggleSelectAll = () => {
-    setBulkSelected(prev => {
-      if (filteredPoles.length > 0 && filteredPoles.every(p => prev.has(p.id))) {
-        return new Set();
-      }
-      return new Set(filteredPoles.map(p => p.id));
-    });
+    if (filteredPoles.length > 0 && filteredPoles.every(p => bulkSelected.has(p.id))) {
+      onBulkSelectedChange(new Set());
+    } else {
+      onBulkSelectedChange(new Set(filteredPoles.map(p => p.id)));
+    }
   };
 
   const handleApplyBulkEdit = (patch: Partial<Pole>) => {
     onBulkEdit(Array.from(bulkSelected), patch);
-    setBulkSelected(new Set());
+    onBulkSelectedChange(new Set());
   };
 
   const expandToSection = (section: 'rules' | 'history') => {

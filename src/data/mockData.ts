@@ -482,6 +482,7 @@ export function makeInitialJob(): Job {
     importedAt: '2025-08-18T10:45:00Z',
     account: 'Account Demo',
     activeDesignSetId: 'ds-original',
+    routes: [],
     designSets: [
       {
         id: 'ds-original',

@@ -5,10 +5,11 @@ import { PublishFlow, PublishToast, type PublishStage } from '../components/layo
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
 import { MapStage } from '../components/map/MapStage';
-import { MapControls } from '../components/map/MapControls';
+import { MapControls, type MapTool, type SelectTool } from '../components/map/MapControls';
+import { SetRouteDialog } from '../components/map/SetRouteDialog';
 import { PoleImages } from '../components/map/PoleImages';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
-import type { Job, DesignSet, Pole, PublishEvent } from '../types';
+import type { Job, DesignSet, Pole, PublishEvent, MapRoute } from '../types';
 import { mockRuleSets, runRulesOnPoles } from '../data/mockData';
 
 const PANEL_DEFAULT_WIDTH = 520;
@@ -39,6 +40,12 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
   const [editSignal, setEditSignal] = useState(0);
   const [panelWidth, setPanelWidth] = useState(PANEL_DEFAULT_WIDTH);
   const [imagesExpanded, setImagesExpanded] = useState(false);
+  // Active map tool. Hand (pan) is the default: it enables map move + zoom.
+  const [mapTool, setMapTool] = useState<MapTool>('pan');
+  const [selectTool, setSelectTool] = useState<SelectTool>('click');
+  // Poles multi-selected from the map / left-panel checkboxes (shared).
+  const [selectedPoleIds, setSelectedPoleIds] = useState<Set<string>>(new Set());
+  const [routeDialogOpen, setRouteDialogOpen] = useState(false);
   // Mock rule-run processing flow: a 3s dialog, then a result toaster.
   const [runningRule, setRunningRule] = useState<{ id: string; name: string } | null>(null);
   const [resultToast, setResultToast] = useState<ResultToastData | null>(null);
@@ -91,6 +98,17 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
 
   const handleTogglePanel = useCallback(() => {
     setPanelOpen(o => !o);
+  }, []);
+
+  // Save a new route (ordered pole strand) onto the job.
+  const handleSaveRoute = useCallback((route: Omit<MapRoute, 'id' | 'createdAt'>) => {
+    const full: MapRoute = { ...route, id: `route-${Date.now()}`, createdAt: new Date().toISOString() };
+    onJobUpdate({ ...job, routes: [...(job.routes ?? []), full] });
+  }, [job, onJobUpdate]);
+
+  // Selecting a saved route re-selects its poles on the map / left panel.
+  const handleSelectRoute = useCallback((route: MapRoute) => {
+    setSelectedPoleIds(new Set(route.poleIds));
   }, []);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -355,6 +373,8 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
             onSetActiveVersion={handleSetActiveVersion}
             onCreateVersion={handleCreateVersion}
             onBulkEdit={handleBulkEdit}
+            bulkSelected={selectedPoleIds}
+            onBulkSelectedChange={setSelectedPoleIds}
             onRenameVersion={handleRenameVersion}
             onDeleteVersion={handleDeleteVersion}
             onPublishVersion={handlePublishVersion}
@@ -374,10 +394,28 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
               poles={poles}
               selectedPoleId={selectedPoleId}
               onSelectPole={handleSelectPole}
+              interactive={mapTool === 'pan'}
+              selectionEnabled={mapTool === 'select' && selectTool === 'click'}
+              selectedIds={selectedPoleIds}
+              onMultiSelect={setSelectedPoleIds}
             />
           )}
           {!imagesExpanded && (
-            <MapControls panelOpen={panelOpen} onTogglePanel={handleTogglePanel} />
+            <MapControls
+              panelOpen={panelOpen}
+              onTogglePanel={handleTogglePanel}
+              activeTool={mapTool}
+              onToolChange={setMapTool}
+              selectTool={selectTool}
+              onSelectToolChange={setSelectTool}
+              hasSelection={selectedPoleIds.size > 0}
+              onClearSelection={() => setSelectedPoleIds(new Set())}
+              canRoute={(job.routes?.length ?? 0) > 0 || selectedPoleIds.size > 1}
+              canAddRoute={selectedPoleIds.size > 1}
+              routes={job.routes ?? []}
+              onAddRoute={() => setRouteDialogOpen(true)}
+              onSelectRoute={handleSelectRoute}
+            />
           )}
           {selectedPole && (
             <PoleImages
@@ -421,6 +459,14 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
         onConfirm={confirmPublish}
       />
       <PublishToast versionName={publishedToast} onClose={() => setPublishedToast(null)} />
+
+      <SetRouteDialog
+        open={routeDialogOpen}
+        onOpenChange={setRouteDialogOpen}
+        poles={poles}
+        selectedIds={selectedPoleIds}
+        onSave={handleSaveRoute}
+      />
     </div>
   );
 }

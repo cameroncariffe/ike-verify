@@ -2,10 +2,10 @@ import { useMemo, useRef, useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import type { Pole } from '../../types';
 import { cn } from '../../lib/utils';
-
-// Intrinsic aspect of the satellite image (1920×1080), used to mirror the
-// <img object-cover> crop so markers stay locked to features in the image.
-const IMG_ASPECT = 1920 / 1080;
+import {
+  IMG_ASPECT, placePoles, buildAdjacency, shortestPath,
+  type GraphEdge,
+} from './poleGraph';
 
 type MarkerStatus = 'pass' | 'fail' | 'warning' | 'unverified';
 
@@ -29,66 +29,11 @@ const MARKER_STYLE: Record<MarkerStatus, { bg: string; ring: string }> = {
 const SPAN_COLOR = '#f0a92b';
 const DROP_COLOR = '#facc15';
 
-// Authored centrelines of the alleys in the satellite image, as percentages of
-// the map area. Poles are distributed evenly along these paths so they sit in
-// the streets rather than being projected from raw lat/lng (which won't align to
-// a static image). Tweak these points if the underlying image changes.
-// Coordinates are in % of the satellite image. The image shows 2× the area of
-// the originally-tuned framing (same centre), so the previous alley alignment is
-// remapped as x' = 25 + x/2, y' = 25 + y/2 (the old frame is the central 50%).
-type Axis = 'v' | 'h';
-const ROAD_PATH: { x: number; y: number }[] = [
-  { x: 47.4, y: 31.5 },
-  { x: 47.4, y: 41.5 },
-  { x: 47.4, y: 51.5 },
-  { x: 47.4, y: 61.5 },
-  { x: 47.4, y: 71.0 },
-];
-
-// New pole runs (vertical east branch + a horizontal cross street). These
-// consume poles from the END of the list, so the original run keeps the main
-// alley while newly-added poles populate the branches. The cross line's right
-// end shares the corner with the east branch's bottom.
-const RIGHT_PATH: { x: number; y: number }[] = [
-  { x: 52.0, y: 45.0 },
-  { x: 52.0, y: 58.5 },
-];
-const CROSS_PATH: { x: number; y: number }[] = [
-  { x: 43.5, y: 58.5 },
-  { x: 52.0, y: 58.5 },
-];
-
-const BRANCH_ROUTES: { id: string; path: { x: number; y: number }[]; axis: Axis; count: number }[] = [
-  { id: 'east', path: RIGHT_PATH, axis: 'v', count: 7 },
-  { id: 'cross', path: CROSS_PATH, axis: 'h', count: 7 },
-];
-
 // Deterministic pseudo-random in [0,1) so service-drop fans look organic but
 // stay stable across renders.
 function seeded(n: number): number {
   const x = Math.sin(n * 127.1 + 311.7) * 43758.5453;
   return x - Math.floor(x);
-}
-
-// Return the point at fraction `t` (0–1) along a polyline, by arc length.
-function pointAlongPath(path: { x: number; y: number }[], t: number) {
-  if (path.length === 1) return path[0];
-  const segLengths = path.slice(0, -1).map((p, i) =>
-    Math.hypot(path[i + 1].x - p.x, path[i + 1].y - p.y)
-  );
-  const total = segLengths.reduce((a, b) => a + b, 0) || 1;
-  let target = Math.min(Math.max(t, 0), 1) * total;
-  for (let i = 0; i < segLengths.length; i++) {
-    if (target <= segLengths[i] || i === segLengths.length - 1) {
-      const f = segLengths[i] === 0 ? 0 : target / segLengths[i];
-      return {
-        x: path[i].x + (path[i + 1].x - path[i].x) * f,
-        y: path[i].y + (path[i + 1].y - path[i].y) * f,
-      };
-    }
-    target -= segLengths[i];
-  }
-  return path[path.length - 1];
 }
 
 interface PlacedPole {
@@ -112,26 +57,27 @@ interface MapMarkersProps {
   onSelectPole: (id: string) => void;
   /** Counter-scale applied to markers so pins stay a constant size while zooming. */
   markerScale?: number;
+  /** When true, clicking markers builds the multi-select set instead of opening details. */
+  selectionEnabled?: boolean;
+  /** Currently multi-selected pole ids (shared with the left panel checkboxes). */
+  selectedIds?: Set<string>;
+  /** Emits the next multi-select set after a click / shift-range click. */
+  onMultiSelect?: (next: Set<string>) => void;
 }
 
-export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 1 }: MapMarkersProps) {
-  const { placed, segments, drops } = useMemo(() => {
+export function MapMarkers({
+  poles, selectedPoleId, onSelectPole, markerScale = 1,
+  selectionEnabled = false, selectedIds, onMultiSelect,
+}: MapMarkersProps) {
+  const { placed, segments, drops, adjacency } = useMemo(() => {
     if (poles.length === 0) {
-      return { placed: [] as PlacedPole[], segments: [] as Segment[], drops: [] as Segment[] };
+      return {
+        placed: [] as PlacedPole[], segments: [] as Segment[],
+        drops: [] as Segment[], adjacency: new Map<string, GraphEdge[]>(),
+      };
     }
 
-    // Partition the list across routes. Branches take poles from the end of the
-    // list (newly-added poles); the main alley keeps the original run.
-    const branchTotal = BRANCH_ROUTES.reduce((a, b) => a + b.count, 0);
-    const mainCount = Math.max(0, poles.length - branchTotal);
-    const routes: { path: { x: number; y: number }[]; axis: Axis; poles: Pole[] }[] = [
-      { path: ROAD_PATH, axis: 'v', poles: poles.slice(0, mainCount) },
-    ];
-    let cursor = mainCount;
-    for (const b of BRANCH_ROUTES) {
-      routes.push({ path: b.path, axis: b.axis, poles: poles.slice(cursor, cursor + b.count) });
-      cursor += b.count;
-    }
+    const { routes, positions, routeGroups } = placePoles(poles);
 
     const placed: PlacedPole[] = [];
     const segments: Segment[] = [];
@@ -145,12 +91,9 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 
 
     let seedBase = 0;
     for (const route of routes) {
-      const n = route.poles.length;
-      const rPlaced: PlacedPole[] = route.poles.map((p, i) => {
-        const t = n > 1 ? i / (n - 1) : 0.5;
-        const { x, y } = pointAlongPath(route.path, t);
-        return { pole: p, status: statusOf(p), x, y };
-      });
+      const rPlaced: PlacedPole[] = route.points.map(pt => ({
+        pole: pt.pole, status: statusOf(pt.pole), x: pt.x, y: pt.y,
+      }));
 
       // Connect consecutive poles within this run.
       for (let i = 0; i < rPlaced.length - 1; i++) {
@@ -181,8 +124,41 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 
       seedBase += 1000;
     }
 
-    return { placed, segments, drops };
+    const adjacency = buildAdjacency(routeGroups, positions);
+
+    return { placed, segments, drops, adjacency };
   }, [poles]);
+
+  // Anchor pole for shift-range selection (the last plainly-clicked pole).
+  const anchorRef = useRef<string | null>(null);
+
+  const handleMarkerClick = (id: string, shiftKey: boolean) => {
+    if (!selectionEnabled) {
+      onSelectPole(id);
+      return;
+    }
+    const current = selectedIds ?? new Set<string>();
+
+    // Shift-click: trace the shortest path along the strands from the anchor to
+    // this pole and select everything on it (works within and across strands).
+    if (shiftKey && anchorRef.current && anchorRef.current !== id) {
+      const path = shortestPath(adjacency, anchorRef.current, id);
+      if (path) {
+        const next = new Set(current);
+        path.forEach(pid => next.add(pid));
+        onMultiSelect?.(next);
+        anchorRef.current = id;
+        return;
+      }
+    }
+
+    // Plain click: toggle this pole and make it the new anchor.
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onMultiSelect?.(next);
+    anchorRef.current = id;
+  };
 
   // Track the map area's size so we can mirror the <img object-cover> crop and
   // keep markers anchored to the image rather than the container.
@@ -254,7 +230,8 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 
           key={node.pole.id}
           node={node}
           selected={node.pole.id === selectedPoleId}
-          onSelect={() => onSelectPole(node.pole.id)}
+          multiSelected={selectedIds?.has(node.pole.id) ?? false}
+          onSelect={shiftKey => handleMarkerClick(node.pole.id, shiftKey)}
           markerScale={markerScale}
         />
       ))}
@@ -265,42 +242,48 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 
 }
 
 function PoleMarker({
-  node, selected, onSelect, markerScale,
+  node, selected, multiSelected, onSelect, markerScale,
 }: {
   node: PlacedPole;
   selected: boolean;
-  onSelect: () => void;
+  multiSelected: boolean;
+  onSelect: (shiftKey: boolean) => void;
   markerScale: number;
 }) {
   const style = MARKER_STYLE[node.status];
   const isUnverified = node.status === 'unverified';
+  const highlighted = selected || multiSelected;
 
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={e => onSelect(e.shiftKey)}
       onMouseDown={e => e.stopPropagation()}
       title={node.pole.poleNumber}
       style={{
         left: `${node.x}%`,
         top: `${node.y}%`,
         // Counter-scale so the pin stays a constant on-screen size at any zoom.
-        transform: `translate(-50%, -50%) scale(${markerScale * (selected ? 1.15 : 1)})`,
+        transform: `translate(-50%, -50%) scale(${markerScale * (highlighted ? 1.15 : 1)})`,
         transformOrigin: 'center',
       }}
       className={cn(
         'pointer-events-auto absolute',
         'flex items-center justify-center rounded-full border-2 border-white shadow-md',
         'focus:outline-none',
-        selected ? 'z-30' : 'z-20',
+        highlighted ? 'z-30' : 'z-20',
         isUnverified ? 'w-[16px] h-[16px]' : 'w-[22px] h-[22px]',
       )}
     >
-      {/* Selection halo */}
-      {selected && (
+      {/* Selection halo — blue for the active (details) pole, accent for multi-select */}
+      {highlighted && (
         <span
           className="absolute -inset-[5px] rounded-full border-2"
-          style={{ borderColor: '#5c5ce8', boxShadow: '0 0 0 3px rgba(92,92,232,0.25)' }}
+          style={
+            selected
+              ? { borderColor: '#5c5ce8', boxShadow: '0 0 0 3px rgba(92,92,232,0.25)' }
+              : { borderColor: '#363687', boxShadow: '0 0 0 3px rgba(54,54,135,0.25)' }
+          }
         />
       )}
       <span
