@@ -24,19 +24,43 @@ const MARKER_STYLE: Record<MarkerStatus, { bg: string; ring: string }> = {
   unverified: { bg: '#9ea2aa', ring: 'rgba(158,162,170,0.35)' },
 };
 
-// Single span colour for all lines (status is intentionally not encoded here).
+// Single span colour for the main runs (status is intentionally not encoded
+// here). Service-drop connections use a distinct yellow.
 const SPAN_COLOR = '#f0a92b';
+const DROP_COLOR = '#facc15';
 
-// Authored centreline of the alley in the satellite image, as percentages of
-// the map area. Poles are distributed evenly along this path so they sit in the
-// alley rather than being projected from raw lat/lng (which won't align to a
-// static image). Tweak these points if the underlying image changes.
+// Authored centrelines of the alleys in the satellite image, as percentages of
+// the map area. Poles are distributed evenly along these paths so they sit in
+// the streets rather than being projected from raw lat/lng (which won't align to
+// a static image). Tweak these points if the underlying image changes.
+// Coordinates are in % of the satellite image. The image shows 2× the area of
+// the originally-tuned framing (same centre), so the previous alley alignment is
+// remapped as x' = 25 + x/2, y' = 25 + y/2 (the old frame is the central 50%).
+type Axis = 'v' | 'h';
 const ROAD_PATH: { x: number; y: number }[] = [
-  { x: 46.3, y: 13 },
-  { x: 46.3, y: 33 },
-  { x: 46.3, y: 53 },
-  { x: 46.3, y: 73 },
-  { x: 46.3, y: 92 },
+  { x: 47.4, y: 31.5 },
+  { x: 47.4, y: 41.5 },
+  { x: 47.4, y: 51.5 },
+  { x: 47.4, y: 61.5 },
+  { x: 47.4, y: 71.0 },
+];
+
+// New pole runs (vertical east branch + a horizontal cross street). These
+// consume poles from the END of the list, so the original run keeps the main
+// alley while newly-added poles populate the branches. The cross line's right
+// end shares the corner with the east branch's bottom.
+const RIGHT_PATH: { x: number; y: number }[] = [
+  { x: 52.0, y: 45.0 },
+  { x: 52.0, y: 58.5 },
+];
+const CROSS_PATH: { x: number; y: number }[] = [
+  { x: 43.5, y: 58.5 },
+  { x: 52.0, y: 58.5 },
+];
+
+const BRANCH_ROUTES: { id: string; path: { x: number; y: number }[]; axis: Axis; count: number }[] = [
+  { id: 'east', path: RIGHT_PATH, axis: 'v', count: 7 },
+  { id: 'cross', path: CROSS_PATH, axis: 'h', count: 7 },
 ];
 
 // Deterministic pseudo-random in [0,1) so service-drop fans look organic but
@@ -74,57 +98,88 @@ interface PlacedPole {
   y: number;
 }
 
+interface Segment {
+  key: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
 interface MapMarkersProps {
   poles: Pole[];
   selectedPoleId: string | null;
   onSelectPole: (id: string) => void;
+  /** Counter-scale applied to markers so pins stay a constant size while zooming. */
+  markerScale?: number;
 }
 
-export function MapMarkers({ poles, selectedPoleId, onSelectPole }: MapMarkersProps) {
+export function MapMarkers({ poles, selectedPoleId, onSelectPole, markerScale = 1 }: MapMarkersProps) {
   const { placed, segments, drops } = useMemo(() => {
     if (poles.length === 0) {
-      return { placed: [] as PlacedPole[], segments: [], drops: [] };
+      return { placed: [] as PlacedPole[], segments: [] as Segment[], drops: [] as Segment[] };
     }
 
-    // Distribute poles evenly along the authored road centreline (list order
-    // ≈ spatial order), so they appear to line the street.
-    const n = poles.length;
-    const placed: PlacedPole[] = poles.map((p, i) => {
-      const t = n > 1 ? i / (n - 1) : 0.5;
-      const { x, y } = pointAlongPath(ROAD_PATH, t);
-      return { pole: p, status: statusOf(p), x, y };
-    });
+    // Partition the list across routes. Branches take poles from the end of the
+    // list (newly-added poles); the main alley keeps the original run.
+    const branchTotal = BRANCH_ROUTES.reduce((a, b) => a + b.count, 0);
+    const mainCount = Math.max(0, poles.length - branchTotal);
+    const routes: { path: { x: number; y: number }[]; axis: Axis; poles: Pole[] }[] = [
+      { path: ROAD_PATH, axis: 'v', poles: poles.slice(0, mainCount) },
+    ];
+    let cursor = mainCount;
+    for (const b of BRANCH_ROUTES) {
+      routes.push({ path: b.path, axis: b.axis, poles: poles.slice(cursor, cursor + b.count) });
+      cursor += b.count;
+    }
 
-    // Main run: connect consecutive poles with a single span colour.
-    const segments = placed.slice(0, -1).map((a, i) => {
-      const b = placed[i + 1];
-      return {
-        key: `${a.pole.id}-${b.pole.id}`,
-        x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-      };
-    });
+    const placed: PlacedPole[] = [];
+    const segments: Segment[] = [];
+    const drops: Segment[] = [];
 
-    // Service drops: from each pole, a fan of lines reaches out to the homes on
-    // both sides of the alley (varying angle + length so it looks organic).
+    // Service drops: a fan of lines reaches out to the homes on both sides of the
+    // street (varying angle + length so it looks organic). Reach is perpendicular
+    // to the run, so vertical runs fan sideways and horizontal runs fan up/down.
     const DROPS_PER_SIDE = 3;
-    const DROP_SCALE = 1 / 3; // overall length of the service drops
-    const drops = placed.flatMap((node, i) => {
-      const out: { key: string; x1: number; y1: number; x2: number; y2: number }[] = [];
-      for (const side of [-1, 1] as const) {
-        for (let k = 0; k < DROPS_PER_SIDE; k++) {
-          const r1 = seeded(i * 13 + k * 3 + (side > 0 ? 100 : 0));
-          const r2 = seeded(i * 17 + k * 5 + (side > 0 ? 200 : 0));
-          const reach = (4 + r1 * 3.5) * DROP_SCALE;                  // horizontal reach to a house
-          const vy = ((k - (DROPS_PER_SIDE - 1) / 2) * 3.2 + (r2 - 0.5) * 2) * DROP_SCALE; // vertical fan spread
-          out.push({
-            key: `drop-${node.pole.id}-${side}-${k}`,
-            x1: node.x, y1: node.y,
-            x2: node.x + side * reach, y2: node.y + vy,
-          });
-        }
+    const DROP_SCALE = 1 / 6; // overall length of the service drops (halved for the 2× image)
+
+    let seedBase = 0;
+    for (const route of routes) {
+      const n = route.poles.length;
+      const rPlaced: PlacedPole[] = route.poles.map((p, i) => {
+        const t = n > 1 ? i / (n - 1) : 0.5;
+        const { x, y } = pointAlongPath(route.path, t);
+        return { pole: p, status: statusOf(p), x, y };
+      });
+
+      // Connect consecutive poles within this run.
+      for (let i = 0; i < rPlaced.length - 1; i++) {
+        const a = rPlaced[i];
+        const b = rPlaced[i + 1];
+        segments.push({ key: `${a.pole.id}-${b.pole.id}`, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
       }
-      return out;
-    });
+
+      rPlaced.forEach((node, i) => {
+        for (const side of [-1, 1] as const) {
+          for (let k = 0; k < DROPS_PER_SIDE; k++) {
+            const r1 = seeded(seedBase + i * 13 + k * 3 + (side > 0 ? 100 : 0));
+            const r2 = seeded(seedBase + i * 17 + k * 5 + (side > 0 ? 200 : 0));
+            const reach = (4 + r1 * 3.5) * DROP_SCALE;                              // out to a house
+            const spread = ((k - (DROPS_PER_SIDE - 1) / 2) * 3.2 + (r2 - 0.5) * 2) * DROP_SCALE; // fan
+            const dx = route.axis === 'v' ? side * reach : spread;
+            const dy = route.axis === 'v' ? spread : side * reach;
+            drops.push({
+              key: `drop-${node.pole.id}-${side}-${k}`,
+              x1: node.x, y1: node.y,
+              x2: node.x + dx, y2: node.y + dy,
+            });
+          }
+        }
+      });
+
+      placed.push(...rPlaced);
+      seedBase += 1000;
+    }
 
     return { placed, segments, drops };
   }, [poles]);
@@ -173,8 +228,8 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole }: MapMarkersPr
           <line
             key={s.key}
             x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
-            stroke={SPAN_COLOR}
-            strokeWidth={1.1}
+            stroke={DROP_COLOR}
+            strokeWidth={0.55}
             strokeLinecap="round"
             opacity={0.8}
             vectorEffect="non-scaling-stroke"
@@ -185,7 +240,7 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole }: MapMarkersPr
             key={s.key}
             x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2}
             stroke={SPAN_COLOR}
-            strokeWidth={2.5}
+            strokeWidth={1.25}
             strokeLinecap="round"
             opacity={0.9}
             vectorEffect="non-scaling-stroke"
@@ -200,6 +255,7 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole }: MapMarkersPr
           node={node}
           selected={node.pole.id === selectedPoleId}
           onSelect={() => onSelectPole(node.pole.id)}
+          markerScale={markerScale}
         />
       ))}
       </div>
@@ -209,11 +265,12 @@ export function MapMarkers({ poles, selectedPoleId, onSelectPole }: MapMarkersPr
 }
 
 function PoleMarker({
-  node, selected, onSelect,
+  node, selected, onSelect, markerScale,
 }: {
   node: PlacedPole;
   selected: boolean;
   onSelect: () => void;
+  markerScale: number;
 }) {
   const style = MARKER_STYLE[node.status];
   const isUnverified = node.status === 'unverified';
@@ -222,13 +279,20 @@ function PoleMarker({
     <button
       type="button"
       onClick={onSelect}
+      onMouseDown={e => e.stopPropagation()}
       title={node.pole.poleNumber}
-      style={{ left: `${node.x}%`, top: `${node.y}%` }}
+      style={{
+        left: `${node.x}%`,
+        top: `${node.y}%`,
+        // Counter-scale so the pin stays a constant on-screen size at any zoom.
+        transform: `translate(-50%, -50%) scale(${markerScale * (selected ? 1.15 : 1)})`,
+        transformOrigin: 'center',
+      }}
       className={cn(
-        'pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2',
+        'pointer-events-auto absolute',
         'flex items-center justify-center rounded-full border-2 border-white shadow-md',
-        'transition-transform duration-100 hover:scale-110 focus:outline-none',
-        selected ? 'z-30 scale-[1.15]' : 'z-20',
+        'focus:outline-none',
+        selected ? 'z-30' : 'z-20',
         isUnverified ? 'w-[16px] h-[16px]' : 'w-[22px] h-[22px]',
       )}
     >

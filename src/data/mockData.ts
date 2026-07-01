@@ -208,6 +208,108 @@ const basePoles: Pole[] = [
     location: { lat: 37.6472, lng: -97.3314, altitude: "1210' 11\"" },
     taggedDate: '02/06/25 01:50PM',
   },
+
+  // ── East branch line (vertical alley to the right of the main run) ──────────
+  {
+    id: 'p-3990', poleNumber: '3990', opNumber: '022', externalId: '022-ST00579670',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "36' 1\"", ikePhoto: 1, commToLce: '78"', commToComm: '20"',
+    location: { lat: 37.6536, lng: -97.3258, altitude: "1220' 8\"" },
+    taggedDate: '04/12/24 09:05AM',
+  },
+  {
+    id: 'p-3991', poleNumber: '3991', opNumber: '022', externalId: '022-ST00579671',
+    status: 'In Progress', type: 'Douglas Fir > 3 > 45', owner: 'ELECTRIC > 002-Evergy',
+    tip: "39' 4\"", ikePhoto: 2, commToLce: '70"', commToComm: '11"',
+    location: { lat: 37.6532, lng: -97.3258, altitude: "1219' 9\"" },
+    taggedDate: '06/03/24 02:40PM',
+  },
+  {
+    id: 'p-3992', poleNumber: '3992', opNumber: '022', externalId: '022-ST00579672',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "35' 9\"", ikePhoto: 1, commToLce: '81"',
+    location: { lat: 37.6528, lng: -97.3258, altitude: "1219' 0\"" },
+    taggedDate: '07/22/24 11:15AM',
+  },
+  {
+    id: 'p-3993', poleNumber: '3993', opNumber: '022', externalId: '022-ST00579673',
+    status: 'Pending Review', type: 'Southern Pine > 5 > 45', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "37' 6\"", ikePhoto: 3, commToLce: '73"', commToComm: '18"',
+    location: { lat: 37.6524, lng: -97.3258, altitude: "1218' 4\"" },
+    taggedDate: '09/30/24 04:25PM',
+  },
+  {
+    id: 'p-3994', poleNumber: '3994', opNumber: '022', externalId: '022-ST00579674',
+    status: 'HOA Complete', type: 'Douglas Fir > 3 > 45', owner: 'ELECTRIC > 002-Evergy',
+    tip: "40' 0\"", ikePhoto: 1, commToLce: '67"', commToComm: '16"',
+    location: { lat: 37.652, lng: -97.3258, altitude: "1217' 7\"" },
+    taggedDate: '11/18/24 08:50AM',
+  },
+  {
+    id: 'p-3995', poleNumber: '3995', opNumber: '022', externalId: '022-ST00579675',
+    status: 'In Progress', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "35' 3\"", ikePhoto: 2, commToLce: '82"', commToComm: '22"',
+    location: { lat: 37.6516, lng: -97.3258, altitude: "1216' 11\"" },
+    taggedDate: '01/09/25 01:05PM',
+  },
+  {
+    id: 'p-3996', poleNumber: '3996', opNumber: '022', externalId: '022-ST00579676',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "36' 7\"", ikePhoto: 1, commToLce: '79"',
+    location: { lat: 37.6512, lng: -97.3258, altitude: "1216' 2\"" },
+    taggedDate: '03/14/25 10:35AM',
+  },
+
+  // ── Cross line (horizontal street meeting the branch line) ──────────────────
+  {
+    id: 'p-3997', poleNumber: '3997', opNumber: '023', externalId: '023-ST00579677',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "35' 10\"", ikePhoto: 1, commToLce: '80"', commToComm: '20"',
+    location: { lat: 37.6515, lng: -97.327, altitude: "1217' 0\"" },
+    taggedDate: '04/02/25 09:40AM',
+  },
+  {
+    id: 'p-3998', poleNumber: '3998', opNumber: '023', externalId: '023-ST00579678',
+    status: 'In Progress', type: 'Douglas Fir > 3 > 50', owner: 'ELECTRIC > 002-Evergy',
+    tip: "41' 8\"", ikePhoto: 2, commToLce: '66"', commToComm: '10"',
+    location: { lat: 37.6515, lng: -97.3266, altitude: "1216' 9\"" },
+    taggedDate: '05/19/25 03:15PM',
+  },
+  {
+    id: 'p-3999', poleNumber: '3999', opNumber: '023', externalId: '023-ST00579679',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "36' 2\"", ikePhoto: 1, commToLce: '83"',
+    location: { lat: 37.6515, lng: -97.3262, altitude: "1216' 5\"" },
+    taggedDate: '06/27/25 11:55AM',
+  },
+  {
+    id: 'p-4000', poleNumber: '4000', opNumber: '023', externalId: '023-ST00579680',
+    status: 'Pending Review', type: 'Southern Pine > 5 > 45', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "37' 0\"", ikePhoto: 3, commToLce: '74"', commToComm: '19"',
+    location: { lat: 37.6515, lng: -97.3258, altitude: "1216' 1\"" },
+    taggedDate: '08/05/25 04:45PM',
+  },
+  {
+    id: 'p-4001', poleNumber: '4001', opNumber: '023', externalId: '023-ST00579681',
+    status: 'HOA Complete', type: 'Douglas Fir > 3 > 45', owner: 'ELECTRIC > 002-Evergy',
+    tip: "39' 9\"", ikePhoto: 1, commToLce: '69"', commToComm: '15"',
+    location: { lat: 37.6515, lng: -97.3254, altitude: "1215' 8\"" },
+    taggedDate: '09/16/25 08:20AM',
+  },
+  {
+    id: 'p-4002', poleNumber: '4002', opNumber: '023', externalId: '023-ST00579682',
+    status: 'In Progress', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "35' 5\"", ikePhoto: 2, commToLce: '81"', commToComm: '21"',
+    location: { lat: 37.6515, lng: -97.325, altitude: "1215' 3\"" },
+    taggedDate: '10/28/25 12:10PM',
+  },
+  {
+    id: 'p-4003', poleNumber: '4003', opNumber: '023', externalId: '023-ST00579683',
+    status: 'HOA Complete', type: 'Southern Pine > 4 > 40', owner: 'COMMUNICATION > 001-AT&T',
+    tip: "36' 4\"", ikePhoto: 1, commToLce: '77"',
+    location: { lat: 37.6515, lng: -97.3246, altitude: "1214' 9\"" },
+    taggedDate: '12/07/25 03:50PM',
+  },
 ];
 
 export const mockRuleSets: RuleSet[] = [

@@ -48,6 +48,7 @@ interface LeftSidebarProps {
   poles: Pole[];
   selectedPoleId: string | null;
   onSelectPole: (poleId: string) => void;
+  onDeselectPole: () => void;
   onEditPoleProperties: (poleId: string) => void;
   onRenamePole: (poleId: string, name: string) => void;
   designSets: DesignSet[];
@@ -864,7 +865,7 @@ function VersionTree({
 
 // ─── Main sidebar ─────────────────────────────────────────────────────────────
 export function LeftSidebar({
-  poles, selectedPoleId, onSelectPole, onEditPoleProperties, onRenamePole,
+  poles, selectedPoleId, onSelectPole, onDeselectPole, onEditPoleProperties, onRenamePole,
   designSets, activeDesignSetId, viewedDesignSetId, baseReadOnly,
   onSelectVersion, onSetActiveVersion, onCreateVersion, onBulkEdit,
   onRenameVersion, onDeleteVersion, onPublishVersion, onRunValidation,
@@ -1111,7 +1112,7 @@ export function LeftSidebar({
             key={pole.id}
             pole={pole}
             selected={pole.id === selectedPoleId}
-            onClick={() => onSelectPole(pole.id)}
+            onClick={() => (pole.id === selectedPoleId ? onDeselectPole() : onSelectPole(pole.id))}
             onEditProperties={() => onEditPoleProperties(pole.id)}
             onRename={name => onRenamePole(pole.id, name)}
             canEdit={!baseReadOnly}

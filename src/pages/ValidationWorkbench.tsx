@@ -4,7 +4,7 @@ import { RuleRunDialog, ResultToast, type ResultToastData } from '../components/
 import { PublishFlow, PublishToast, type PublishStage } from '../components/layout/PublishFlow';
 import { LeftSidebar } from '../components/layout/LeftSidebar';
 import { MapView } from '../components/map/MapView';
-import { MapMarkers } from '../components/map/MapMarkers';
+import { MapStage } from '../components/map/MapStage';
 import { MapControls } from '../components/map/MapControls';
 import { PoleImages } from '../components/map/PoleImages';
 import { PoleDetailsPanel } from '../components/panels/PoleDetailsPanel';
@@ -73,6 +73,13 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
   const handleSelectPole = useCallback((id: string) => {
     setSelectedPoleId(id);
     setPanelOpen(true);
+  }, []);
+
+  // Clicking the already-active pole clears the selection: closes the details
+  // panel and hides the pole image carousel.
+  const handleDeselectPole = useCallback(() => {
+    setSelectedPoleId(null);
+    setPanelOpen(false);
   }, []);
 
   // "Edit properties": reveal the pole in the panel and drop it into edit mode.
@@ -337,6 +344,7 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
             poles={poles}
             selectedPoleId={selectedPoleId}
             onSelectPole={handleSelectPole}
+            onDeselectPole={handleDeselectPole}
             onEditPoleProperties={handleEditPoleProperties}
             onRenamePole={handleRenamePole}
             designSets={job.designSets}
@@ -359,9 +367,10 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
         )}
 
         <main className="flex flex-1 min-w-0 overflow-hidden relative">
-          <MapView />
-          {!imagesExpanded && (
-            <MapMarkers
+          {imagesExpanded ? (
+            <MapView />
+          ) : (
+            <MapStage
               poles={poles}
               selectedPoleId={selectedPoleId}
               onSelectPole={handleSelectPole}
