@@ -21,11 +21,13 @@ interface MapStageProps {
   selectionEnabled?: boolean;
   selectedIds?: Set<string>;
   onMultiSelect?: (next: Set<string>) => void;
+  /** Called when the map background is clicked (not dragged) in pan mode. */
+  onBackgroundClick?: () => void;
 }
 
 export function MapStage({
   poles, selectedPoleId, onSelectPole, interactive = true,
-  selectionEnabled = false, selectedIds, onMultiSelect,
+  selectionEnabled = false, selectedIds, onMultiSelect, onBackgroundClick,
 }: MapStageProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -33,6 +35,8 @@ export function MapStage({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  // Tracks whether the pointer moved enough to count as a pan (vs. a click).
+  const movedRef = useRef(false);
 
   const displayScale = BASE_SCALE * zoom;
 
@@ -64,6 +68,7 @@ export function MapStage({
   const onMouseDown = (e: React.MouseEvent) => {
     if (!interactive || e.button !== 0) return;
     dragRef.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+    movedRef.current = false;
     setDragging(true);
   };
 
@@ -72,16 +77,22 @@ export function MapStage({
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current;
       if (!d) return;
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) movedRef.current = true;
       setPan(clampPan({ x: d.px + (e.clientX - d.sx), y: d.py + (e.clientY - d.sy) }, displayScale));
     };
-    const onUp = () => { setDragging(false); dragRef.current = null; };
+    const onUp = () => {
+      // A press-release on the background without dragging is a click → deselect.
+      if (!movedRef.current) onBackgroundClick?.();
+      setDragging(false);
+      dragRef.current = null;
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragging, displayScale, clampPan]);
+  }, [dragging, displayScale, clampPan, onBackgroundClick]);
 
   // Scroll-wheel zoom, anchored to the cursor position.
   useEffect(() => {

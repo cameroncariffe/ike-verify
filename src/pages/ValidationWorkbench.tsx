@@ -356,7 +356,7 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
     <div className="flex flex-col h-screen overflow-hidden bg-[#f7f9fc]">
       <Navbar account={`ikeGPS > ${job.account}`} onResetPrototype={onResetPrototype} />
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
         {!imagesExpanded && (
           <LeftSidebar
             poles={poles}
@@ -398,6 +398,7 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
               selectionEnabled={mapTool === 'select' && selectTool === 'click'}
               selectedIds={selectedPoleIds}
               onMultiSelect={setSelectedPoleIds}
+              onBackgroundClick={handleDeselectPole}
             />
           )}
           {!imagesExpanded && (
@@ -415,6 +416,7 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
               routes={job.routes ?? []}
               onAddRoute={() => setRouteDialogOpen(true)}
               onSelectRoute={handleSelectRoute}
+              rightInset={panelOpen ? panelWidth : 0}
             />
           )}
           {selectedPole && (
@@ -425,21 +427,26 @@ export function ValidationWorkbench({ job, onJobUpdate, onResetPrototype }: Vali
               expanded={imagesExpanded}
               onToggleExpanded={() => setImagesExpanded(o => !o)}
               onSelectPole={handleSelectPole}
+              rightInset={panelOpen ? panelWidth : 0}
             />
           )}
         </main>
 
+        {/* Overlay the details panel so the map keeps a constant width and
+            doesn't reflow when the panel opens/closes. */}
         {panelOpen && (
-          <PoleDetailsPanel
-            pole={selectedPole}
-            width={panelWidth}
-            onResizeStart={handleResizeStart}
-            readOnly={readOnly}
-            readOnlyReason={readOnlyReason}
-            editSignal={editSignal}
-            onUpdatePole={handleUpdatePole}
-            onSetActive={() => handleSetActiveVersion(viewedDesignSet.id)}
-          />
+          <div className="absolute right-0 top-0 bottom-0 z-30 shadow-[-4px_0_16px_rgba(0,0,0,0.08)]">
+            <PoleDetailsPanel
+              pole={selectedPole}
+              width={panelWidth}
+              onResizeStart={handleResizeStart}
+              readOnly={readOnly}
+              readOnlyReason={readOnlyReason}
+              editSignal={editSignal}
+              onUpdatePole={handleUpdatePole}
+              onSetActive={() => handleSetActiveVersion(viewedDesignSet.id)}
+            />
+          </div>
         )}
       </div>
 

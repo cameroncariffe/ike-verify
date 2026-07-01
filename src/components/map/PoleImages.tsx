@@ -18,10 +18,12 @@ interface PoleImagesProps {
   expanded: boolean;
   onToggleExpanded: () => void;
   onSelectPole: (id: string) => void;
+  /** Space (px) taken by the overlaid details panel, so the strip centers in view. */
+  rightInset?: number;
 }
 
 export function PoleImages({
-  pole, prevPole, nextPole, expanded, onToggleExpanded, onSelectPole,
+  pole, prevPole, nextPole, expanded, onToggleExpanded, onSelectPole, rightInset = 0,
 }: PoleImagesProps) {
   // Which of the three cards is highlighted. The selected pole's card by default.
   const [activeCard, setActiveCard] = useState(0);
@@ -78,9 +80,13 @@ export function PoleImages({
     );
   }
 
-  // Docked strip centered at the bottom of the map area.
+  // Docked strip centered at the bottom of the visible map area (excluding the
+  // overlaid details panel).
   return (
-    <div className="absolute inset-x-0 bottom-3 z-20 flex flex-col items-center">
+    <div
+      className="absolute left-0 bottom-3 z-20 flex flex-col items-center transition-[right] duration-200 ease-out"
+      style={{ right: rightInset }}
+    >
       <div className="flex flex-col gap-2">
         <div className="flex gap-1.5">
           {cards.map((c, i) => (

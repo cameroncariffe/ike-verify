@@ -31,6 +31,8 @@ interface MapControlsProps {
   onAddRoute: () => void;
   /** Selects an existing route's poles on the map. */
   onSelectRoute: (route: MapRoute) => void;
+  /** Space (px) taken by the overlaid details panel, so the toolbar stays visible. */
+  rightInset?: number;
 }
 
 const SELECT_ORDER: SelectTool[] = ['click', 'lasso', 'box'];
@@ -48,6 +50,7 @@ const SELECT_LABEL: Record<SelectTool, string> = {
 export function MapControls({
   panelOpen, onTogglePanel, activeTool, onToolChange, selectTool, onSelectToolChange,
   hasSelection, onClearSelection, canRoute, canAddRoute, routes, onAddRoute, onSelectRoute,
+  rightInset = 0,
 }: MapControlsProps) {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [routeFlyoutOpen, setRouteFlyoutOpen] = useState(false);
@@ -86,7 +89,10 @@ export function MapControls({
   const alternatives = SELECT_ORDER.filter(t => t !== selectTool);
 
   return (
-    <div className="absolute top-2 right-2 z-20 flex flex-col gap-2 items-center w-12">
+    <div
+      className="absolute top-2 z-20 flex flex-col gap-2 items-center w-12 transition-[right] duration-200 ease-out"
+      style={{ right: rightInset + 8 }}
+    >
       {/* Right-panel toggle */}
       <button
         onClick={onTogglePanel}
